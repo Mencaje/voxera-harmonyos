@@ -25,7 +25,9 @@ extern "C" int SDL_Main(int argc, char *argv[]);
 namespace {
 std::atomic<bool> g_surfaceReady{false};
 std::atomic<bool> g_engineRunning{false};
-std::string g_status = "阶段1：等待 Surface";
+/* Release UI hides status text; keep messages for logs / error detection only. */
+// std::string g_status = "阶段1：等待 Surface";
+std::string g_status;
 
 #ifdef VOXERA_LINK_LUANTI
 std::mutex g_engineMutex;
@@ -45,7 +47,7 @@ void RunEngineOnSurfaceThread(OH_NativeXComponent * /*component*/)
 {
     porting::ohosRefreshPaths();
     if (!porting::ohosDataPathsReady()) {
-        g_status = "阶段4失败：资源路径未就绪（请先等资源解压完成）";
+        g_status = "失败：资源路径未就绪（请先等资源解压完成）";
         OH_LOG_ERROR(LOG_APP, "Luanti paths not ready");
         return;
     }
@@ -86,7 +88,8 @@ void SetAppDataPaths(const char *shareDir, const char *cacheDir, const char *use
     (void)shareDir;
     (void)cacheDir;
     (void)userDir;
-    g_status = "阶段3：资源路径已设置（引擎未链接）";
+    // g_status = "阶段3：资源路径已设置（引擎未链接）";
+    g_status = "paths configured (engine not linked)";
 #endif
 }
 
@@ -111,9 +114,9 @@ void OnSurfaceCreated(OH_NativeXComponent *component, void *window)
     RunEngineOnSurfaceThread(component);
 #else
     if (EglPreviewStart(component, window)) {
-        g_status = "阶段3：GPU 正常 + 资源已就绪";
+        g_status = "GPU ok";
     } else {
-        g_status = "阶段3：资源就绪，但 GPU 初始化失败";
+        g_status = "失败：GPU 初始化失败";
     }
 #endif
 }

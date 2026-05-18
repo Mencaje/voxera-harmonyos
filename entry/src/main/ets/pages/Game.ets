@@ -16,13 +16,20 @@ import { WindowDecorHelper } from '../util/WindowDecorHelper';
 const DOMAIN = 0x0000;
 const TAG = 'VoxeraGame';
 const XCOMPONENT_ID = 'luanti_xcomponent';
+/** Porting stage HUD (阶段1/2/3、Luanti 移植叠层). Off for release / store builds. */
+const SHOW_STARTUP_DEBUG_UI: boolean = false;
+/** Matches module.json5 startWindowBackground — seamless after system cold start. */
+const STARTUP_COVER_COLOR: string = '#FFFFFF';
 
 @Entry
 @Component
 struct Game {
-  @State statusText: string = '阶段3：正在准备游戏资源…';
+  @State statusText: string = '';
   @State assetsReady: boolean = false;
-  @State showDebugHud: boolean = true;
+  /** Full-screen cover until main menu / engine ready (replaces debug stage overlay). */
+  @State showStartupCover: boolean = true;
+  @State startupError: string = '';
+  @State showDebugHud: boolean = false;
   @State showDecorCapsule: boolean = false;
   @State capsuleWidth: number = 96;
   @State capsuleHeight: number = 28;
@@ -55,7 +62,7 @@ struct Game {
   aboutToAppear(): void {
     this.uiContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
     if (!this.uiContext) {
-      this.statusText = '阶段3失败：无法获取应用上下文';
+      this.startupError = '无法获取应用上下文';
       return;
     }
     LuantiAssets.ensureInstalled(this.uiContext).then(async (shareDir: string) => {
@@ -86,7 +93,7 @@ struct Game {
           VoxeraPaths.scheduleSyncEngineToPublic(engineDir, publicDir);
         }
       }
-      this.statusText = '资源就绪，正在创建 GPU 画布…';
+      this.statusText = '资源就绪';
       hilog.info(DOMAIN, TAG, 'Engine user: %{public}s public: %{public}s', engineDir, publicDir);
       this.windowDecorHelper.onRectChange = (rect: window.TitleButtonRect) => {
         this.applyCapsuleLayout(rect);
@@ -96,7 +103,7 @@ struct Game {
       OhosUiBridge.bindWindowDecor(this.windowDecorHelper);
       hilog.info(DOMAIN, TAG, 'Share dir: %{public}s', shareDir);
     }).catch((err: Error) => {
-      this.statusText = `阶段3失败：${err.message}`;
+      this.startupError = err.message;
       hilog.error(DOMAIN, TAG, 'Startup failed: %{public}s', err.message);
     });
   }
@@ -106,8 +113,9 @@ struct Game {
       status.includes('missing file') || status.includes('Failed to');
   }
 
-  private shouldHideDebugHud(status: string): boolean {
-    if (this.isErrorStatus(status)) {
+  /** Release: drop startup cover when main menu (or equivalent) is ready. */
+  private shouldDismissStartupCover(status: string): boolean {
+    if (this.startupError.length > 0) {
       return false;
     }
     if (status.startsWith('main_menu:')) {
@@ -120,6 +128,16 @@ struct Game {
       return true;
     }
     return false;
+  }
+
+  private shouldHideDebugHud(status: string): boolean {
+    if (!SHOW_STARTUP_DEBUG_UI) {
+      return true;
+    }
+    if (this.isErrorStatus(status)) {
+      return false;
+    }
+    return this.shouldDismissStartupCover(status);
   }
 
   private applyCapsuleLayout(rect: window.TitleButtonRect): void {
@@ -179,10 +197,19 @@ struct Game {
       this.requestGameSurfaceFocus();
       hilog.info(DOMAIN, TAG, 'in_game: requesting XComponent focus');
     }
-    if (this.shouldHideDebugHud(status)) {
-      this.showDebugHud = false;
+    if (this.shouldDismissStartupCover(status)) {
+      this.showStartupCover = false;
+    }
+    if (SHOW_STARTUP_DEBUG_UI) {
+      if (this.shouldHideDebugHud(status)) {
+        this.showDebugHud = false;
+      } else if (this.isErrorStatus(status)) {
+        this.showDebugHud = true;
+        this.startupError = status;
+      }
     } else if (this.isErrorStatus(status)) {
-      this.showDebugHud = true;
+      this.startupError = status;
+      this.showStartupCover = true;
     }
     if (this.uiContext && this.assetsReady) {
       OhosUiBridge.poll(this.uiContext, this.uiContext.cacheDir).catch(() => {
@@ -227,7 +254,7 @@ struct Game {
 
   build() {
     Stack() {
-      if (!this.assetsReady) {
+      if (!this.assetsReady && SHOW_STARTUP_DEBUG_UI) {
         Column() {
           Text('Voxera · 资源安装')
             .fontSize(18)
@@ -268,7 +295,7 @@ struct Game {
                 fs.accessSync(`${this.shareDir}/builtin/init.lua`);
               } catch {
                 this.assetsReady = false;
-                this.statusText = 'builtin 丢失，正在重新安装资源…';
+                this.statusText = '正在重新安装资源…';
                 LuantiAssets.ensureInstalled(this.uiContext!).then(async (dir: string) => {
                   this.shareDir = dir;
                   LuantiAssets.verifyInstalled(dir);
@@ -293,9 +320,9 @@ struct Game {
                       VoxeraPaths.scheduleSyncEngineToPublic(engineDir, publicDir);
                     }
                   }
-                  this.statusText = '资源就绪，正在创建 GPU 画布…';
+                  this.statusText = '资源就绪';
                 }).catch((e: Error) => {
-                  this.statusText = `阶段3失败：${e.message}`;
+                  this.startupError = e.message;
                 });
                 return;
               }
@@ -335,7 +362,40 @@ struct Game {
         marginRight: this.capsuleMarginRight,
       })
 
-      if (this.showDebugHud) {
+      /* Release: white cover until main menu; debug: stage HUD + optional status text. */
+      if (this.showStartupCover) {
+        Column() {
+          if (this.startupError.length > 0) {
+            Text('启动失败')
+              .fontSize(18)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#222222')
+            Text(this.startupError)
+              .fontSize(14)
+              .fontColor('#CC3333')
+              .margin({ top: 12 })
+          } else if (SHOW_STARTUP_DEBUG_UI && this.statusText.length > 0) {
+            Text('Voxera · Luanti 移植')
+              .fontSize(18)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#222222')
+            Text(this.statusText)
+              .fontSize(13)
+              .fontColor('#444444')
+              .margin({ top: 8 })
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Start)
+        .padding(24)
+        .backgroundColor(STARTUP_COVER_COLOR)
+        .hitTestBehavior(this.startupError.length > 0 ? HitTestMode.Default : HitTestMode.None)
+        .zIndex(2)
+      }
+
+      if (SHOW_STARTUP_DEBUG_UI && this.showDebugHud) {
         Column() {
           Text('Voxera · Luanti 移植')
             .fontSize(18)
