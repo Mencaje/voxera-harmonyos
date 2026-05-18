@@ -1,0 +1,17 @@
+{
+  "devices": {
+    "general": ["2in1"]
+  },
+  "production": {
+    "removedSysCaps": [
+      "SystemCapability.Multimedia.Media.AVTranscoder",
+      "SystemCapability.Communication.Bluetooth.Core",
+      "SystemCapability.ArkUi.Graphics3D",
+      "SystemCapability.DistributedHardware.DeviceManager",
+      "SystemCapability.Multimedia.AVSession.AVInputCast",
+      "SystemCapability.Multimedia.Drm.Core",
+      "SystemCapability.Customization.EnterpriseDeviceManager",
+      "SystemCapability.Security.DataLossPrevention"
+    ]
+  }
+}

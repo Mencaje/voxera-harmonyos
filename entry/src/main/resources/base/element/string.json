@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Voxera"
+    },
+    {
+      "name": "permission_internet_reason",
+      "value": "Voxera online servers and content download"
+    },
+    {
+      "name": "permission_documents_reason",
+      "value": "Save worlds and mods to Documents/Voxera/user_data so you can back them up"
+    }
+  ]
+}
