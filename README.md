@@ -2,7 +2,14 @@
 
 [![License: LGPL v2.1+](https://img.shields.io/badge/License-LGPL%20v2.1%2B-blue.svg)](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
 
-Voxera 鸿蒙版：基于 [Luanti](https://www.luanti.org/) 的方块沙盒客户端，运行于 HarmonyOS / OpenHarmony。适配鸿蒙 PC（2in1），含中文界面、本地 Mod/游戏包安装，并针对鸿蒙窗口、键鼠与触控做了优化。
+Voxera 鸿蒙版：基于 [Luanti](https://www.luanti.org/) 的方块沙盒客户端，面向 **HarmonyOS PC 系统**（2in1 / 折叠 PC / 台式 PC 形态）。含中文界面、本地 Mod/游戏包安装，并针对鸿蒙 PC 窗口与键鼠操作做了适配。
+
+## 平台与操作
+
+| 项目 | 说明 |
+|------|------|
+| **支持** | 仅 **鸿蒙 PC**（`deviceTypes: 2in1`），使用 **键盘 + 鼠标** 操作 |
+| **不支持** | 鸿蒙手机、鸿蒙平板；**不支持触屏操作**（请勿在触屏上当作触控游戏使用） |
 
 ## 仓库结构
 

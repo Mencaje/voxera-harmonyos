@@ -2,7 +2,7 @@
 
 ## Voxera for HarmonyOS
 
-本仓库 **Voxera 鸿蒙版** 是在开源项目 [Luanti](https://www.luanti.org/)（<https://github.com/luanti-org/luanti>）源码基础上移植、修改而成的衍生作品，运行于 HarmonyOS / OpenHarmony。
+本仓库 **Voxera 鸿蒙版** 是在开源项目 [Luanti](https://www.luanti.org/)（<https://github.com/luanti-org/luanti>）源码基础上移植、修改而成的衍生作品，**仅面向 HarmonyOS PC（2in1）**，以键鼠操作为主，不支持鸿蒙手机/平板及触屏玩法。
 
 **Voxera** 鸿蒙移植及相关修改：
 
