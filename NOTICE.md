@@ -9,10 +9,7 @@
 - Copyright (C) 2025–2026 Voxera contributors（见 Git 提交历史）
 - 许可协议：**GNU Lesser General Public License v2.1 或更高版本（LGPL-2.1-or-later）**，与 Luanti 引擎相同
 
-完整协议正文见仓库根目录：
-
-- [`COPYING.LESSER`](COPYING.LESSER)
-- [`LICENSE`](LICENSE)（与 `COPYING.LESSER` 内容相同，便于阅读）
+完整协议正文见仓库根目录 [`COPYING.LESSER`](COPYING.LESSER)（与 Luanti 一致）。
 
 ## Luanti 上游
 

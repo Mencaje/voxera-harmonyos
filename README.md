@@ -29,7 +29,7 @@ Voxera 鸿蒙版：基于 [Luanti](https://www.luanti.org/) 的方块沙盒客�
 
 | 文件 | 说明 |
 |------|------|
-| [`COPYING.LESSER`](COPYING.LESSER) / [`LICENSE`](LICENSE) | LGPL-2.1 协议全文 |
+| [`COPYING.LESSER`](COPYING.LESSER) | LGPL-2.1 协议全文（与 Luanti 相同） |
 | [`NOTICE.md`](NOTICE.md) | Voxera 衍生作品声明与 LGPL 源码获取说明 |
 | [`luanti/LICENSE.txt`](luanti/LICENSE.txt) | Luanti 纹理、音效等媒体资源许可 |
 
