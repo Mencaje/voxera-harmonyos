@@ -20,6 +20,8 @@ const XCOMPONENT_ID = 'luanti_xcomponent';
 const SHOW_STARTUP_DEBUG_UI: boolean = false;
 /** Matches module.json5 startWindowBackground — seamless after system cold start. */
 const STARTUP_COVER_COLOR: string = '#FFFFFF';
+/** Same asset as startWindowIcon — second-layer splash after system cold start. */
+const STARTUP_ICON_VP: number = 128;
 
 @Entry
 @Component
@@ -362,7 +364,7 @@ struct Game {
         marginRight: this.capsuleMarginRight,
       })
 
-      /* Release: white cover until main menu; debug: stage HUD + optional status text. */
+      /* Release: app-icon splash until main menu; debug: stage HUD + optional status text. */
       if (this.showStartupCover) {
         Column() {
           if (this.startupError.length > 0) {
@@ -383,13 +385,19 @@ struct Game {
               .fontSize(13)
               .fontColor('#444444')
               .margin({ top: 8 })
+          } else {
+            Image($r('app.media.startIcon'))
+              .width(STARTUP_ICON_VP)
+              .height(STARTUP_ICON_VP)
+              .objectFit(ImageFit.Contain)
+              .interpolation(ImageInterpolation.High)
           }
         }
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Start)
-        .padding(24)
+        .alignItems(this.startupError.length > 0 ? HorizontalAlign.Start : HorizontalAlign.Center)
+        .padding(this.startupError.length > 0 ? 24 : 0)
         .backgroundColor(STARTUP_COVER_COLOR)
         .hitTestBehavior(this.startupError.length > 0 ? HitTestMode.Default : HitTestMode.None)
         .zIndex(2)
