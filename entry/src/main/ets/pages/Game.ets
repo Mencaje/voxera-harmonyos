@@ -21,7 +21,8 @@ const SHOW_STARTUP_DEBUG_UI: boolean = false;
 /** Matches module.json5 startWindowBackground — seamless after system cold start. */
 const STARTUP_COVER_COLOR: string = '#FFFFFF';
 /** Same asset as startWindowIcon — second-layer splash after system cold start. */
-const STARTUP_ICON_VP: number = 128;
+/** Second-layer splash only (Game.ets); does not change startWindowIcon / launcher icon. */
+const STARTUP_ICON_VP: number = 570;
 
 @Entry
 @Component
