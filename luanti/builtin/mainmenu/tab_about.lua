@@ -119,17 +119,12 @@ local function build_voxera_about_hypertext()
 		hypertext_label_value("开发者：", "萌创匠盒"),
 		hypertext_label_value("官网：", "mencaje.com"),
 		hypertext_label_value("本项目开源地址：",
-			"（须填写：本应用对 Luanti 修改后的完整源码仓库 URL，以满足 LGPL 分发义务）"),
+			"https://github.com/Mencaje/voxera-harmonyos"),
 		"\n",
 		"<heading>", core.hypertext_escape("本应用所基于的主要开源项目（引擎）："), "</heading>\n",
 	}
 	append_oss_block(parts, VOXERA_BASE_ENGINE, true)
-	table.insert(parts,
-		"<gray>" .. core.hypertext_escape(
-			"说明：Voxera 为 Luanti 引擎的衍生作品。LGPL-2.1 要求向最终用户提供获取" ..
-			"对应源代码的途径；请通过上方「本项目开源地址」获取本应用修改版源码。" ..
-			"上游 Luanti 源码见「开源源码」。"
-		) .. "</gray>\n\n")
+	table.insert(parts, "\n")
 	table.insert(parts,
 		"<heading>" .. core.hypertext_escape("引擎运行时还使用以下组件：") .. "</heading>\n")
 	for i = 1, #VOXERA_RUNTIME_LIBS do
