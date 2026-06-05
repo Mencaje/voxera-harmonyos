@@ -7,6 +7,11 @@
 #include <irrlicht_changes/static_text.h>
 
 #include "client/renderingengine.h"
+#include "client/fontengine.h"
+#include "util/numeric.h"
+#if defined(__OHOS__)
+#include "porting_ohos.h"
+#endif
 
 StatusTextHelper::StatusTextHelper(gui::IGUIEnvironment *guienv, gui::IGUIElement *parent)
 {
@@ -100,6 +105,14 @@ void StatusTextHelper::update(float dtime)
 	m_guitext_status->setText(m_statustext.c_str());
 	m_guitext_status->setVisible(true);
 	m_guitext_status->setTextAlignment(gui::EGUIA_CENTER, m_text_alignment_v);
+
+#if defined(__OHOS__)
+	if (porting::ohosGetDeviceFormFactor() == "phone") {
+		unsigned fs = rangelim((unsigned)(g_fontengine->getDefaultFontSize() * 1.50f + 0.5f),
+				12u, 72u);
+		m_guitext_status->setOverrideFont(g_fontengine->getFont(fs));
+	}
+#endif
 
 	updatePosition();
 

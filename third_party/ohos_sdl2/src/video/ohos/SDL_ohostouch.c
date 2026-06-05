@@ -59,25 +59,26 @@ void OHOS_OnTouch(SDL_Window *window, OhosTouchId *touchsize)
     }
 
     fingerId = (SDL_FingerID)touchsize->pointerFingerIdIn;
+    if (window->w != 0 && window->h != 0) {
+        tempX = floor(touchsize->x * FLOOR_HIGHT) / ((float)window->w * FLOOR_HIGHT);
+        tempY = floor(touchsize->y * FLOOR_HIGHT) / ((float)window->h * FLOOR_HIGHT);
+    } else {
+        tempX = 0.0;
+        tempY = 0.0;
+    }
+
     switch (touchsize->action) {
         case ACTION_DOWN:
 //      case ACTION_POINTER_DOWN:
-            if (window->w != 0 && window->h != 0) {
-                tempX = floor(touchsize->x * FLOOR_HIGHT) / ((float)window->w * FLOOR_HIGHT);
-                tempY = floor(touchsize->y * FLOOR_HIGHT) / ((float)window->h * FLOOR_HIGHT);
-            } else {
-                tempX = 0.0;
-                tempY = 0.0;
-            }
             SDL_SendTouch(touchDeviceId, fingerId, window, SDL_TRUE, tempX, tempY, touchsize->p);
             break;
 
         case ACTION_MOVE:
-            SDL_SendTouchMotion(touchDeviceId, fingerId, window, touchsize->x, touchsize->y, touchsize->p);
+            SDL_SendTouchMotion(touchDeviceId, fingerId, window, tempX, tempY, touchsize->p);
             break;
 
         case ACTION_UP:
-            SDL_SendTouch(touchDeviceId, fingerId, window, SDL_FALSE, touchsize->x, touchsize->y, touchsize->p);
+            SDL_SendTouch(touchDeviceId, fingerId, window, SDL_FALSE, tempX, tempY, touchsize->p);
             break;
 
         default:

@@ -1,15 +1,73 @@
 {
   "app": {
-    "signingConfigs": [],
-    "products": [{
-      "name": "default",
-      "signingConfig": "default",
-      "compatibleSdkVersion": 20,
-      "compileSdkVersion": 20,
-      "targetSdkVersion": 20,
-      "runtimeOS": "OpenHarmony"
-    }],
-    "buildModeSet": [{"name": "debug"}, {"name": "release"}]
+    "signingConfigs": [
+      {
+        "name": "555",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "D:/xiangmu/Mencaje.translatorHarmony/签名/mencaje翻译.p12",
+          "storePassword": "0000001F54317A7ADEB2C8E1B63A8BC2D19DD64C26A2E5CC0316B28362273C78367254BC00217FA205A21D3AE3538E",
+          "keyAlias": "mencaje",
+          "keyPassword": "0000001FF46DDD9F8F1392F9064C4C87A0441B7B200345B74D7EDE1F6D7353D1C060CFEF5F0821457B8D98D9C209F9",
+          "signAlg": "SHA256withECDSA",
+          "profile": "D:/xiangmu/Voxera/签名/调试/Voxera调试Debug.p7b",
+          "certpath": "D:/xiangmu/HarmonyOS证书/调试证书/萌创匠盒12.cer"
+        }
+      },
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "D:/xiangmu/Voxera/签名/Voxera.p12",
+          "storePassword": "0000001FBD201371BA07F20342F77D819573F02583BEC9FAB7A3802E9C719CAF9F2793C4647044F895EEAA973D2170",
+          "keyAlias": "Voxera",
+          "keyPassword": "0000001FADC0E0BE85176CD172A64D07E51E62FDCB8AFE3F6212EE25F215449E573EF02C7D09E3DA09803CB1C55B87",
+          "signAlg": "SHA256withECDSA",
+          "profile": "D:/xiangmu/Voxera/签名/VoxeraRelease.p7b",
+          "certpath": "D:/xiangmu/Voxera/签名/Voxera.cer"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "555",
+        "compatibleSdkVersion": "6.0.2(22)",
+        "compileSdkVersion": "6.0.2(22)",
+        "targetSdkVersion": "6.0.2(22)",
+        "runtimeOS": "HarmonyOS"
+      },
+      {
+        "name": "oh",
+        "signingConfig": "555",
+        "compatibleSdkVersion": "6.0.0(20)",
+        "compileSdkVersion": "6.0.0(20)",
+        "targetSdkVersion": "6.0.0(20)",
+        "runtimeOS": "OpenHarmony"
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
   },
-  "modules": [{"name": "entry", "srcPath": "./entry", "targets": [{"name": "default", "applyToProducts": ["default"]}]}]
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default",
+            "oh"
+          ]
+        }
+      ]
+    }
+  ]
 }

@@ -371,6 +371,7 @@ void GUIEngine::run()
 
 #ifdef __OHOS__
 	porting::ohosEngineStatusSet("main_menu: running");
+	m_clouds_enabled = false;
 #endif
 
 	unsigned int text_height = g_fontengine->getTextHeight();
@@ -400,7 +401,7 @@ void GUIEngine::run()
 			std::string pick_form;
 			std::string pick_path;
 			bool pick_ok = false;
-			if (porting::ohosTakePickResult(pick_form, pick_path, pick_ok) && m_buttonhandler) {
+			while (porting::ohosTakePickResult(pick_form, pick_path, pick_ok) && m_buttonhandler) {
 				if (pick_ok) {
 					char buf[384];
 					snprintf(buf, sizeof(buf), "pick ok: %s", pick_path.c_str());
@@ -440,6 +441,10 @@ void GUIEngine::run()
 				drawOverlay(driver);
 			} else {
 				drawBackground(driver);
+				/* Without menu clouds (always on OHOS), overlay must still be drawn.
+				 * Lua loads menu/overlay.png before background; skipping drawOverlay
+				 * here left only the sky color visible. */
+				drawOverlay(driver);
 			}
 
 			drawFooter(driver);
@@ -478,6 +483,9 @@ void GUIEngine::run()
 
 #ifdef __ANDROID__
 		m_menu->getAndroidUIInput();
+#endif
+#if defined(__OHOS__)
+		m_menu->getOhosUIInput();
 #endif
 	}
 	framemarker.end();

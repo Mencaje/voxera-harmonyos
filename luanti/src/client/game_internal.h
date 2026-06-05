@@ -374,6 +374,10 @@ private:
 	bool m_camera_offset_changed = false;
 	bool m_game_focused = false;
 
+#ifdef __OHOS__
+	bool m_had_pause_menu = false;
+#endif
+
 	bool m_does_lost_focus_pause_game = false;
 
 	// if true, (almost) the whole game is paused

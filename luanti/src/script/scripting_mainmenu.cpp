@@ -106,6 +106,22 @@ bool MainMenuScripting::checkPathAccess(const std::string &abs_path, bool write_
 void MainMenuScripting::step()
 {
 	asyncEngine.step(getStack());
+
+	SCRIPTAPI_PRECHECKHEADER
+
+	int error_handler = PUSH_ERROR_HANDLER(L);
+
+	lua_getglobal(L, "core");
+	lua_getfield(L, -1, "run_mainmenu_after_step");
+	lua_remove(L, -2);
+	if (lua_isfunction(L, -1)) {
+		lua_pushnumber(L, 0);
+		PCALL_RES(lua_pcall(L, 1, 0, error_handler));
+	} else {
+		lua_pop(L, 1);
+	}
+
+	lua_pop(L, 1); // Pop error handler
 }
 
 u32 MainMenuScripting::queueAsync(std::string &&serialized_func,

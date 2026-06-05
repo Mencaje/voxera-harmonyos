@@ -1,9 +1,14 @@
 {
   "devices": {
-    "general": ["2in1"]
+                        "general": [
+      "default",
+      "tablet",
+      "2in1"
+    ]
   },
   "production": {
     "removedSysCaps": [
+      "SystemCapability.Advertising.Ads",
       "SystemCapability.Multimedia.Media.AVTranscoder",
       "SystemCapability.Communication.Bluetooth.Core",
       "SystemCapability.ArkUi.Graphics3D",
@@ -11,7 +16,14 @@
       "SystemCapability.Multimedia.AVSession.AVInputCast",
       "SystemCapability.Multimedia.Drm.Core",
       "SystemCapability.Customization.EnterpriseDeviceManager",
-      "SystemCapability.Security.DataLossPrevention"
+      "SystemCapability.Security.DataLossPrevention",
+      "SystemCapability.Security.DataTransitManager",
+      "SystemCapability.Multimedia.MediaLibrary.Core",
+      "SystemCapability.Multimedia.MediaLibrary.DistributedCore",
+      "SystemCapability.PowerManager.BatteryManager.Extension",
+      "SystemCapability.PowerManager.PowerManager.Extension",
+      "SystemCapability.Security.DeviceSecurityLevel",
+      "SystemCapability.UserIAM.UserAuth.PinAuth"
     ]
   }
 }

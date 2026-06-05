@@ -91,6 +91,9 @@ int ModApiMainMenu::l_update_formspec(lua_State *L)
 	std::string formspec(luaL_checkstring(L, 1));
 
 	if (engine->m_formspecgui != 0) {
+#if defined(__OHOS__)
+		porting::ohosEngineStatusSet("menu: update_formspec");
+#endif
 		engine->m_formspecgui->setForm(formspec);
 	}
 
@@ -936,6 +939,13 @@ int ModApiMainMenu::l_ohos_set_zip_drop_target(lua_State *L)
 	porting::ohosSetZipDropTarget(formname ? formname : "");
 	return 0;
 }
+
+int ModApiMainMenu::l_ohos_release_pointer(lua_State *L)
+{
+	(void)L;
+	porting::ohosReleaseStalePointer();
+	return 0;
+}
 #endif
 
 /******************************************************************************/
@@ -1195,6 +1205,7 @@ void ModApiMainMenu::Initialize(lua_State *L, int top)
 #if defined(__OHOS__)
 	API_FCT(ohos_set_status);
 	API_FCT(ohos_set_zip_drop_target);
+	API_FCT(ohos_release_pointer);
 #endif
 	API_FCT(get_mainmenu_path);
 	API_FCT(show_path_select_dialog);
@@ -1215,6 +1226,22 @@ void ModApiMainMenu::Initialize(lua_State *L, int top)
 
 	lua_pushboolean(L, g_first_run);
 	lua_setfield(L, top, "is_first_run");
+}
+
+/******************************************************************************/
+void ModApiMainMenu::InitializeContentPackages(lua_State *L, int top)
+{
+	API_FCT(get_games);
+	API_FCT(get_content_info);
+	API_FCT(get_mod_list);
+	API_FCT(get_modpath);
+	API_FCT(get_modpaths);
+	API_FCT(get_gamepath);
+	API_FCT(get_texturepath);
+	API_FCT(get_texturepath_share);
+	API_FCT(create_dir);
+	API_FCT(delete_dir);
+	API_FCT(may_modify_path);
 }
 
 /******************************************************************************/

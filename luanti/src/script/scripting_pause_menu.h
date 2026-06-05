@@ -18,6 +18,7 @@ class PauseMenuScripting:
 public:
 	PauseMenuScripting(Client *client);
 	void loadBuiltin();
+	void step();
 
 protected:
 	bool checkPathInternal(const std::string &abs_path, bool write_required,

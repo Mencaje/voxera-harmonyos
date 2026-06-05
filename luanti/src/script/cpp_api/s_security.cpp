@@ -124,6 +124,7 @@ void ScriptApiSecurity::initializeSecurity()
 		"collectgarbage",
 		"DIR_DELIM",
 		"PLATFORM",
+		"DEVICE_FORM_FACTOR",
 		"error",
 		"getfenv",
 		"getmetatable",

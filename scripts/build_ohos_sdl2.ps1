@@ -1,13 +1,23 @@
-# Build HarmonyOS SDL2 for Luanti deps (x86_64 2in1 PC emulator).
+# Build HarmonyOS SDL2 + cJSON for one ABI (x86_64 emulator or arm64-v8a device).
+# Usage: $env:OHOS_ARCH='arm64-v8a'; .\scripts\build_ohos_sdl2.ps1
 # Source: https://gitcode.com/openharmony-sig/ohos_sdl2
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-$SdkNative = "D:\deveco studio\sdk\default\openharmony\native"
+$SdkNative = $env:OHOS_NATIVE_HOME
+if (-not $SdkNative -or -not (Test-Path $SdkNative)) {
+    foreach ($cand in @(
+        'D:\HarmonyOS\Huawei\OpenHarmony SDK\20\native',
+        'D:\deveco studio\sdk\default\openharmony\native'
+    )) {
+        if (Test-Path $cand) { $SdkNative = $cand; break }
+    }
+}
+if (-not $SdkNative) { throw 'OpenHarmony native SDK not found. Set OHOS_NATIVE_HOME.' }
 $Toolchain = Join-Path $SdkNative "build\cmake\ohos.toolchain.cmake"
 $Cmake = Join-Path $SdkNative "build-tools\cmake\bin\cmake.exe"
 $Ninja = Join-Path $SdkNative "build-tools\cmake\bin\ninja.exe"
 $Abi = if ($env:OHOS_ARCH) { $env:OHOS_ARCH } else { "x86_64" }
-$Out = Join-Path $Root "third_party\ohos_sdl2_build"
+$Out = Join-Path $Root "third_party\ohos_sdl2_build\$Abi"
 $Src = Join-Path $Root "third_party\ohos_sdl2"
 $Cjson = Join-Path $Root "third_party\cjson"
 
@@ -48,3 +58,13 @@ if (-not $Lib) { throw "libSDL2.a not found under $Out" }
 Copy-Item $Lib.FullName (Join-Path $Dest "libSDL2.a") -Force
 Copy-Item (Join-Path $Src "include\*.h") (Join-Path $Dest "include\SDL2\") -Force
 Write-Host "Installed SDL2 to $Dest"
+
+$CjsonLib = Get-ChildItem $Out -Recurse -Filter "libcjson.a" | Select-Object -First 1
+if ($CjsonLib) {
+    $CjsonDest = Join-Path $Root "entry\ohos_deps\$Abi\cjson"
+    New-Item -ItemType Directory -Force -Path $CjsonDest | Out-Null
+    Copy-Item $CjsonLib.FullName (Join-Path $CjsonDest "libcjson.a") -Force
+    Write-Host "Installed cJSON to $CjsonDest"
+} else {
+    Write-Warning "libcjson.a not found under $Out"
+}

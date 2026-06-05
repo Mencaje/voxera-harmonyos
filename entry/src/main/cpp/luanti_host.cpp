@@ -102,6 +102,15 @@ void SetPublicUserDataDir(const char *publicUserDir)
 #endif
 }
 
+void SetDeviceFormFactor(const char *deviceType)
+{
+#ifdef VOXERA_LINK_LUANTI
+    porting::ohosSetDeviceFormFactor(deviceType ? deviceType : "");
+#else
+    (void)deviceType;
+#endif
+}
+
 void OnSurfaceCreated(OH_NativeXComponent *component, void *window)
 {
     g_surfaceReady = true;

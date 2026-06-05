@@ -5,6 +5,7 @@
 #include "game_internal.h"
 #ifdef __OHOS__
 #include "porting_ohos.h"
+#include "ohos_touch_dispatch.h"
 #endif
 
 #include <cmath>
@@ -957,6 +958,10 @@ bool Game::createClient(const GameStartData &start_data)
 
 bool Game::shouldShowTouchControls()
 {
+#ifdef __OHOS__
+	if (porting::ohosGetDeviceFormFactor() == "phone")
+		return false;
+#endif
 	if (!device->supportsTouchEvents())
 		return false;
 
@@ -1404,12 +1409,33 @@ void Game::processUserInput(f32 dtime)
 
 #ifdef __OHOS__
 	input->syncPlatformInput();
+	{
+		const bool native_pause = porting::ohosGetDeviceFormFactor() == "phone" &&
+				porting::ohosGetNativePauseActive();
+		porting::ohosSetGameMenuActive(isMenuActive() || native_pause);
+	}
+	{
+		const bool pause_menu = g_menumgr.pausesGame();
+		if (m_had_pause_menu && !pause_menu)
+			m_game_formspec.notifyPauseMenuClosed();
+		m_had_pause_menu = pause_menu;
+	}
+	{
+		static bool had_native_pause = false;
+		const bool native_pause = porting::ohosGetDeviceFormFactor() == "phone" &&
+				porting::ohosGetNativePauseActive();
+		if (had_native_pause && !native_pause)
+			m_game_formspec.notifyPauseMenuClosed();
+		had_native_pause = native_pause;
+	}
 #endif
 
 	// Reset input if window not active or some menu is active
 #ifdef __OHOS__
 	// Keys are injected from ArkUI; SDL focus flags are unreliable on OHOS XComponent.
-	const bool suppress_game_input = isMenuActive() ||
+	const bool native_pause = porting::ohosGetDeviceFormFactor() == "phone" &&
+			porting::ohosGetNativePauseActive();
+	const bool suppress_game_input = isMenuActive() || native_pause ||
 			guienv->hasFocus(gui_chat_console.get());
 #else
 	const bool suppress_game_input = !device->isWindowActive() || isMenuActive() ||
@@ -1452,6 +1478,11 @@ void Game::processUserInput(f32 dtime)
 		handleAndroidChatInput();
 #endif
 
+#if defined(__OHOS__)
+	if (porting::ohosGetDeviceFormFactor() == "phone")
+		m_game_formspec.handleOhosUIInput();
+#endif
+
 	// Increase timer for double tap of "keymap_jump"
 	if (m_cache_doubletap_jump && runData.jump_timer_up <= 0.2f)
 		runData.jump_timer_up += dtime;
@@ -1465,6 +1496,21 @@ void Game::processUserInput(f32 dtime)
 
 void Game::processKeyInput()
 {
+#ifdef __OHOS__
+	if (porting::ohosGetDeviceFormFactor() == "phone") {
+		int phone_action = 0;
+		while (porting::ohosTakePhoneGameAction(&phone_action)) {
+			if (phone_action == porting::OHOS_PHONE_GAME_INVENTORY) {
+				if (m_game_formspec.isPlayerInventoryOpen())
+					m_game_formspec.closePlayerInventory();
+				else
+					m_game_formspec.showPlayerInventory(nullptr);
+			} else if (phone_action == porting::OHOS_PHONE_GAME_MINIMAP) {
+				toggleMinimap(isKeyDown(KeyType::SNEAK));
+			}
+		}
+	}
+#endif
 	if (wasKeyDown(KeyType::DROP)) {
 		dropSelectedItem(isKeyDown(KeyType::SNEAK));
 	} else if (wasKeyDown(KeyType::AUTOFORWARD)) {
@@ -1478,8 +1524,24 @@ void Game::processKeyInput()
 #ifdef __ANDROID__
 		m_android_chat_open = false;
 #endif
-		if (!gui_chat_console->isOpenInhibited()) {
-			m_game_formspec.showPauseMenu();
+#ifdef __OHOS__
+		m_game_formspec.updateEscPauseBlock(input->isKeyDown(KeyType::ESC));
+#endif
+		if (!gui_chat_console->isOpenInhibited()
+#ifdef __OHOS__
+				&& !m_game_formspec.shouldBlockEscPause()
+#endif
+				) {
+#if defined(__OHOS__)
+			if (porting::ohosGetDeviceFormFactor() == "phone"
+					&& simple_singleplayer_mode) {
+				porting::ohosSetNativePauseActive(
+						!porting::ohosGetNativePauseActive());
+			} else
+#endif
+			{
+				m_game_formspec.showPauseMenu();
+			}
 		}
 	} else if (wasKeyDown(KeyType::CHAT)) {
 		openConsole(0.2, L"");
@@ -1622,6 +1684,17 @@ void Game::processItemSelection(u16 *new_playeritem)
 		if (selection)
 			*new_playeritem = *selection;
 	}
+
+#ifdef __OHOS__
+	if (porting::ohosGetDeviceFormFactor() == "phone") {
+		unsigned slot = 0;
+		if (ohos_phone_take_hotbar_select(&slot)) {
+			if (m_game_formspec.ohosPhoneApplyHotbarTap((u16)slot))
+				; // inventory selection moved to hotbar
+			*new_playeritem = (u16)slot;
+		}
+	}
+#endif
 
 	// Clamp selection again in case it wasn't changed but max_item was
 	*new_playeritem = MYMIN(*new_playeritem, max_item);
@@ -2140,7 +2213,12 @@ void Game::updatePlayerControl(const CameraOrientation &cam)
 void Game::updatePauseState()
 {
 	bool was_paused = this->m_is_paused;
-	this->m_is_paused = this->simple_singleplayer_mode && g_menumgr.pausesGame();
+	this->m_is_paused = this->simple_singleplayer_mode && (g_menumgr.pausesGame()
+#ifdef __OHOS__
+			|| (porting::ohosGetDeviceFormFactor() == "phone"
+					&& porting::ohosGetNativePauseActive())
+#endif
+	);
 
 	if (!was_paused && this->m_is_paused) {
 		this->pauseAnimation();
@@ -3375,6 +3453,10 @@ void Game::handleDigging(const PointedThing &pointed, const v3s16 &nodepos,
 		client->setCrack(runData.dig_index, nodepos);
 	} else {
 		infostream << "Digging completed" << std::endl;
+#ifdef __OHOS__
+		if (porting::ohosGetDeviceFormFactor() == "phone")
+			porting::ohosRequestVibrate(50);
+#endif
 		client->setCrack(-1, v3s16(0, 0, 0));
 
 		runData.dig_time = 0;
@@ -3546,6 +3628,17 @@ void Game::updateFrame(ProfilerGraph *graph, RunStats *stats, f32 dtime,
 
 	if (player->getWieldIndex() != runData.new_playeritem)
 		client->setPlayerItem(runData.new_playeritem);
+
+#ifdef __OHOS__
+	if (porting::ohosGetDeviceFormFactor() == "phone") {
+		unsigned drop_slot = 0;
+		if (ohos_phone_take_hotbar_drop(&drop_slot)) {
+			if (player->getWieldIndex() != drop_slot)
+				client->setPlayerItem((u16)drop_slot);
+			dropSelectedItem(false);
+		}
+	}
+#endif
 
 	if (client->updateWieldedItem()) {
 		// Update wielded tool

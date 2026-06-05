@@ -12,6 +12,9 @@
 #include "util/numeric.h" // rangelim
 #include "exceptions.h"
 #include "gettext.h"
+#ifdef __OHOS__
+#include "porting_ohos.h"
+#endif
 #include <IGUIEnvironment.h>
 #include <IGUIFont.h>
 
@@ -295,8 +298,8 @@ gui::IGUIFont *FontEngine::initFont(FontSpec spec)
 
 	auto createFont = [&](gui::SGUITTFace *face) -> gui::CGUITTFont* {
 #if defined(__OHOS__)
-		/* Monochrome glyphs are more stable on GLES2 (avoids formspec text streaks). */
-		const bool antialias = false;
+		/* Phone: mono glyphs (GLES-safe). Tablet/2in1: antialiased (A1R5G5B5 shows black blocks). */
+		const bool antialias = (porting::ohosGetDeviceFormFactor() != "phone");
 #else
 		const bool antialias = true;
 #endif

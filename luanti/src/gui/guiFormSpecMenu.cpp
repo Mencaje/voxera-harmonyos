@@ -33,6 +33,34 @@
 #include "client/fontengine.h"
 #include "client/sound.h"
 #include "util/numeric.h"
+#if defined(__OHOS__)
+#include "porting_ohos.h"
+
+static constexpr float OHOS_PHONE_FORMSPEC_SLOT_SCALE = 1.40f;
+static constexpr float OHOS_PHONE_FORMSPEC_FONT_SCALE = 1.32f;
+static constexpr float OHOS_PHONE_TOOLTIP_FONT_SCALE = 1.55f;
+
+static gui::IGUIFont *ohosPhoneFormspecFont()
+{
+	if (porting::ohosGetDeviceFormFactor() != "phone")
+		return g_fontengine->getFont();
+	const unsigned fs = rangelim(
+			(unsigned)(g_fontengine->getDefaultFontSize() * OHOS_PHONE_FORMSPEC_FONT_SCALE + 0.5f),
+			12u, 72u);
+	return g_fontengine->getFont(fs);
+}
+
+static gui::IGUIFont *ohosPhoneTooltipFont()
+{
+	if (porting::ohosGetDeviceFormFactor() != "phone")
+		return g_fontengine->getFont();
+	const unsigned fs = rangelim(
+			(unsigned)(g_fontengine->getDefaultFontSize() * OHOS_PHONE_FORMSPEC_FONT_SCALE *
+					OHOS_PHONE_TOOLTIP_FONT_SCALE + 0.5f),
+			14u, 72u);
+	return g_fontengine->getFont(fs);
+}
+#endif
 #include "util/screenshot.h"
 #include "util/string.h" // for parseColorString()
 #include "irrlicht_changes/static_text.h"
@@ -3195,7 +3223,7 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 		padding = v2s32(use_imgsize*3.0/8, use_imgsize*3.0/8);
 		m_btn_height = use_imgsize*15.0/13 * 0.35;
 
-		m_font = g_fontengine->getFont();
+		m_font = ohosPhoneFormspecFont();
 
 		if (mydata.real_coordinates) {
 			mydata.size = v2s32(
@@ -3219,7 +3247,7 @@ void GUIFormSpecMenu::regenerateGui(v2u32 screensize)
 		// Non-size[] form must consist only of text fields and
 		// implicit "Proceed" button.  Use default font, and
 		// temporary form size which will be recalculated below.
-		m_font = g_fontengine->getFont();
+		m_font = ohosPhoneFormspecFont();
 		m_btn_height = font_line_height(m_font) * 0.875;
 		DesiredRect = core::rect<s32>(
 			(s32)((f32)mydata.screensize.X * mydata.offset.X) - (s32)(mydata.anchor.X * 580.0),
@@ -3445,6 +3473,49 @@ void GUIFormSpecMenu::getAndroidUIInput()
 }
 #endif
 
+#if defined(__OHOS__)
+void GUIFormSpecMenu::getOhosUIInput()
+{
+	porting::OhosDialogState dialogState = getOhosUIInputState();
+	if (dialogState == porting::OHOS_DIALOG_SHOWN) {
+		return;
+	} else if (dialogState == porting::OHOS_DIALOG_CANCELED) {
+		m_jni_field_name.clear();
+		return;
+	}
+
+	std::string fieldname = m_jni_field_name;
+	m_jni_field_name.clear();
+
+	for (const FieldSpec &field : m_fields) {
+		if (field.fname != fieldname)
+			continue;
+
+		IGUIElement *element = getElementFromId(field.fid, true);
+		if (!element || element->getType() != gui::EGUIET_EDIT_BOX)
+			return;
+
+		gui::IGUIEditBox *editbox = (gui::IGUIEditBox *)element;
+		std::string text = porting::ohosGetInputDialogMessage();
+		editbox->setText(utf8_to_wide(text).c_str());
+
+		bool enter_after_edit = false;
+		auto iter = field_enter_after_edit.find(fieldname);
+		if (iter != field_enter_after_edit.end())
+			enter_after_edit = iter->second;
+		if (enter_after_edit && editbox->getParent()) {
+			SEvent enter;
+			enter.EventType = EET_GUI_EVENT;
+			enter.GUIEvent.Caller = editbox;
+			enter.GUIEvent.Element = nullptr;
+			enter.GUIEvent.EventType = gui::EGET_EDITBOX_ENTER;
+			editbox->getParent()->OnEvent(enter);
+		}
+		return;
+	}
+}
+#endif
+
 GUIInventoryList::ItemSpec GUIFormSpecMenu::getItemAtPos(v2s32 p) const
 {
 	for (const GUIInventoryList *e : m_inventorylists) {
@@ -3468,6 +3539,12 @@ void GUIFormSpecMenu::drawSelectedItem()
 				m_client, IT_ROT_DRAGGED);
 		return;
 	}
+
+#if defined(__OHOS__)
+	// Phone tap-select: keep the stack in its slot with a yellow border.
+	if (ohosPhoneTapSelectActive())
+		return;
+#endif
 
 	Inventory *inv = m_invmgr->getInventory(m_selected_item->inventoryloc);
 	sanity_check(inv);
@@ -3556,6 +3633,23 @@ void GUIFormSpecMenu::drawMenu()
 		showTooltip(utf8_to_wide(tooltip), m_default_tooltip_color,
 				m_default_tooltip_bgcolor);
 	}
+
+#if defined(__OHOS__)
+	if (ohosPhoneTapSelectActive() && m_selected_item && m_selected_amount > 0 &&
+			m_client) {
+		Inventory *inv = m_invmgr->getInventory(m_selected_item->inventoryloc);
+		InventoryList *list = inv ? inv->getList(m_selected_item->listname) : nullptr;
+		if (list && (u32)m_selected_item->i < list->getSize()) {
+			ItemStack stack = list->getItem(m_selected_item->i);
+			if (!stack.empty()) {
+				std::string detail = stack.getDescription(m_client->idef());
+				if (m_tooltip_append_itemname)
+					detail += "\n[" + stack.name + "]";
+				ohosPhoneShowItemDetailTooltip(utf8_to_wide(detail));
+			}
+		}
+	}
+#endif
 
 	if (m_hovered_item_tooltips.empty()) {
 		// reset rotation time
@@ -4294,6 +4388,15 @@ bool GUIFormSpecMenu::OnEvent(const SEvent& event)
 		}
 
 	}
+
+#if defined(__OHOS__)
+	if (porting::ohosGetDeviceFormFactor() == "phone" &&
+			(event.EventType == EET_MOUSE_INPUT_EVENT ||
+			event.EventType == EET_TOUCH_INPUT_EVENT)) {
+		if (ohosPhoneOnInventoryInput(event))
+			return true;
+	}
+#endif
 
 	/* Mouse event other than movement, or crossing the border of inventory
 	   field while holding left, right, or middle mouse button
@@ -5316,5 +5419,316 @@ double GUIFormSpecMenu::calculateImgsize(const parserData &data)
 
 	// Try to use the preferred imgsize, but if that's bigger than the maximum
 	// size, use the maximum size.
-	return std::min(prefer_imgsize, std::min(fitx_imgsize, fity_imgsize));
+	double result = std::min(prefer_imgsize, std::min(fitx_imgsize, fity_imgsize));
+#if defined(__OHOS__)
+	if (porting::ohosGetDeviceFormFactor() == "phone")
+		result *= OHOS_PHONE_FORMSPEC_SLOT_SCALE;
+#endif
+	return result;
 }
+
+#if defined(__OHOS__)
+
+bool GUIFormSpecMenu::ohosPhoneTapSelectActive() const
+{
+	return porting::ohosGetDeviceFormFactor() == "phone";
+}
+
+bool GUIFormSpecMenu::ohosPhoneHasInventorySelection() const
+{
+	return ohosPhoneTapSelectActive() && m_selected_item && m_selected_amount > 0;
+}
+
+bool GUIFormSpecMenu::ohosPhoneOnInventoryInput(const SEvent &event)
+{
+	if (!ohosPhoneTapSelectActive())
+		return false;
+
+	if (event.EventType == EET_TOUCH_INPUT_EVENT) {
+		if (event.TouchInput.Event == ETIE_PRESSED_DOWN)
+			return true;
+		return false;
+	}
+
+	if (event.EventType != EET_MOUSE_INPUT_EVENT)
+		return false;
+
+	switch (event.MouseInput.Event) {
+	case EMIE_LMOUSE_PRESSED_DOWN: {
+		gui::IGUIElement *hovered =
+				Environment->getRootGUIElement()->getElementFromPoint(
+						core::position2d<s32>(m_pointer.X, m_pointer.Y));
+		if (hovered && hovered->getType() == gui::EGUIET_EDIT_BOX)
+			return false;
+		m_ohos_inv_tap_down = m_pointer;
+		m_ohos_inv_tap_active = true;
+		m_ohos_inv_scroll_active = false;
+		m_ohos_inv_scroll_bar = nullptr;
+		m_ohos_inv_scroll_container = nullptr;
+		ohosPhoneResolveScrollTarget(m_pointer, m_ohos_inv_scroll_bar,
+				m_ohos_inv_scroll_container);
+		m_ohos_inv_scroll_last = m_pointer;
+		return true;
+	}
+	case EMIE_MOUSE_MOVED:
+		if (m_ohos_inv_tap_active &&
+				m_ohos_inv_tap_down.getDistanceFromSQ(m_pointer) > 400)
+			m_ohos_inv_tap_active = false;
+		if (!m_ohos_inv_scroll_active && m_ohos_inv_scroll_bar &&
+				event.MouseInput.isLeftPressed() && !m_ohos_inv_tap_active) {
+			m_ohos_inv_scroll_active = true;
+		}
+		if (m_ohos_inv_scroll_active && m_ohos_inv_scroll_bar &&
+				m_ohos_inv_scroll_container) {
+			ohosPhoneApplyScrollDrag(m_pointer.Y - m_ohos_inv_scroll_last.Y);
+			m_ohos_inv_scroll_last = m_pointer;
+			return true;
+		}
+		return false;
+	case EMIE_LMOUSE_LEFT_UP: {
+		const bool was_tap = m_ohos_inv_tap_active && !m_ohos_inv_scroll_active;
+		m_ohos_inv_tap_active = false;
+		m_ohos_inv_scroll_active = false;
+		m_ohos_inv_scroll_bar = nullptr;
+		m_ohos_inv_scroll_container = nullptr;
+		if (was_tap)
+			ohosPhoneHandleInventoryTap();
+		return true;
+	}
+	case EMIE_RMOUSE_PRESSED_DOWN:
+	case EMIE_RMOUSE_LEFT_UP:
+	case EMIE_MMOUSE_PRESSED_DOWN:
+	case EMIE_MMOUSE_LEFT_UP:
+		return true;
+	default:
+		return false;
+	}
+}
+
+void GUIFormSpecMenu::ohosPhoneResolveScrollTarget(v2s32 p, GUIScrollBar *&out_bar,
+		GUIScrollContainer *&out_cont)
+{
+	out_bar = nullptr;
+	out_cont = nullptr;
+
+	for (const auto &sb : m_scrollbars) {
+		if (sb.second->isHorizontal())
+			continue;
+		core::rect<s32> rect = sb.second->getAbsolutePosition();
+		if (rect.getArea() > 0 && rect.isPointInside(p)) {
+			out_bar = sb.second;
+			for (const auto &c : m_scroll_containers) {
+				if (c.first == sb.first.fname) {
+					out_cont = c.second;
+					return;
+				}
+			}
+			return;
+		}
+	}
+
+	for (const auto &c : m_scroll_containers) {
+		gui::IGUIElement *clipper = c.second->getParent();
+		if (!clipper)
+			continue;
+		core::rect<s32> clip = clipper->getAbsoluteClippingRect();
+		if (clip.getArea() <= 0 || !clip.isPointInside(p))
+			continue;
+		for (const auto &sb : m_scrollbars) {
+			if (sb.first.fname == c.first && !sb.second->isHorizontal()) {
+				out_bar = sb.second;
+				out_cont = c.second;
+				return;
+			}
+		}
+	}
+}
+
+void GUIFormSpecMenu::ohosPhoneApplyScrollDrag(s32 delta_y)
+{
+	if (!m_ohos_inv_scroll_bar || !m_ohos_inv_scroll_container || delta_y == 0)
+		return;
+
+	const f32 factor = m_ohos_inv_scroll_container->getScrollFactor();
+	if (factor == 0.0f)
+		return;
+
+	s32 new_pos = m_ohos_inv_scroll_bar->getPos() +
+			(s32)std::round((f32)delta_y / factor);
+	new_pos = rangelim(new_pos, m_ohos_inv_scroll_bar->getMin(),
+			m_ohos_inv_scroll_bar->getMax());
+	if (new_pos == m_ohos_inv_scroll_bar->getPos())
+		return;
+
+	m_ohos_inv_scroll_bar->setPos(new_pos);
+	m_ohos_inv_scroll_container->updateScrolling();
+}
+
+void GUIFormSpecMenu::ohosPhoneShowItemDetailTooltip(const std::wstring &text)
+{
+	gui::IGUIFont *tooltip_font = ohosPhoneTooltipFont();
+	m_tooltip_element->setOverrideFont(tooltip_font);
+
+	EnrichedString ntext(text);
+	ntext.setDefaultColor(m_default_tooltip_color);
+	if (!ntext.hasBackground())
+		ntext.setBackground(m_default_tooltip_bgcolor);
+
+	setStaticText(m_tooltip_element, ntext);
+
+	s32 pad = m_btn_height;
+	if (porting::ohosGetDeviceFormFactor() == "phone")
+		pad = (s32)(pad * 1.35f + 0.5f);
+
+	s32 tooltip_width = m_tooltip_element->getTextWidth() + pad;
+	s32 tooltip_height = m_tooltip_element->getTextHeight() + (pad / 3);
+
+	v2u32 screenSize = Environment->getVideoDriver()->getScreenSize();
+	s32 tooltip_x = AbsoluteRect.UpperLeftCorner.X +
+			(AbsoluteRect.getWidth() - tooltip_width) / 2;
+	s32 tooltip_y = AbsoluteRect.LowerRightCorner.Y - tooltip_height - m_btn_height / 2;
+
+	tooltip_x = rangelim(tooltip_x, m_btn_height,
+			(s32)screenSize.X - tooltip_width - m_btn_height);
+	tooltip_y = rangelim(tooltip_y, m_btn_height,
+			(s32)screenSize.Y - tooltip_height - m_btn_height);
+
+	m_tooltip_element->setRelativePosition(core::rect<s32>(
+			core::position2d<s32>(tooltip_x, tooltip_y),
+			core::dimension2d<s32>(tooltip_width, tooltip_height)));
+	m_tooltip_element->setVisible(true);
+	bringToFront(m_tooltip_element);
+}
+
+void GUIFormSpecMenu::ohosPhoneHandleInventoryTap()
+{
+	updateSelectedItem();
+	GUIInventoryList::ItemSpec s = getItemAtPos(m_pointer);
+
+	if (!s.isValid())
+		return;
+
+	InventoryLocation player_loc;
+	player_loc.setCurrentPlayer();
+	if (ohosPhoneHasInventorySelection() && s.inventoryloc == player_loc &&
+			s.listname == "main") {
+		ohosPhoneApplyHotbarTap((u16)s.i);
+		return;
+	}
+
+	Inventory *inv_s = m_invmgr->getInventory(s.inventoryloc);
+	if (!inv_s)
+		return;
+	InventoryList *list_s = inv_s->getList(s.listname);
+	if (!list_s || (u32)s.i >= list_s->getSize())
+		return;
+
+	if (s.listname == "craftpreview") {
+		if (!m_selected_item || !m_selected_item->isValid() ||
+				m_selected_item->listname == "craftresult") {
+			ICraftAction *a = new ICraftAction();
+			a->count = 1;
+			a->craft_inv = s.inventoryloc;
+			m_invmgr->inventoryAction(a);
+		}
+		return;
+	}
+
+	ItemStack stack_at = list_s->getItem(s.i);
+	const bool empty = stack_at.empty();
+	const bool identical = m_selected_item && s.isValid() && (*m_selected_item == s);
+
+	if (!m_selected_item) {
+		if (!empty) {
+			m_selected_item = std::make_unique<GUIInventoryList::ItemSpec>(s);
+			m_selected_amount = stack_at.count;
+			m_selected_dragging = false;
+		}
+		return;
+	}
+
+	if (identical) {
+		m_selected_amount = 0;
+		m_selected_item.reset();
+		m_selected_dragging = false;
+		m_selected_swap.clear();
+		return;
+	}
+
+	if (empty) {
+		IMoveAction *a = new IMoveAction();
+		a->count = m_selected_amount;
+		a->from_inv = m_selected_item->inventoryloc;
+		a->from_list = m_selected_item->listname;
+		a->from_i = m_selected_item->i;
+		a->to_inv = s.inventoryloc;
+		a->to_list = s.listname;
+		a->to_i = s.i;
+		m_invmgr->inventoryAction(a);
+		m_selected_amount = 0;
+		m_selected_item.reset();
+		m_selected_dragging = false;
+		m_selected_swap.clear();
+		return;
+	}
+
+	m_selected_item = std::make_unique<GUIInventoryList::ItemSpec>(s);
+	m_selected_amount = stack_at.count;
+	m_selected_dragging = false;
+	m_selected_swap.clear();
+}
+
+bool GUIFormSpecMenu::ohosPhoneApplyHotbarTap(u16 hotbar_slot)
+{
+	if (!ohosPhoneHasInventorySelection() || !m_client)
+		return false;
+
+	InventoryLocation player_loc;
+	player_loc.setCurrentPlayer();
+	if (m_current_inventory_location != player_loc)
+		return false;
+
+	Inventory *inv = m_invmgr->getInventory(player_loc);
+	if (!inv)
+		return false;
+	InventoryList *mainlist = inv->getList("main");
+	if (!mainlist || hotbar_slot >= mainlist->getSize())
+		return false;
+
+	if (m_selected_item->listname == "main" &&
+			(u16)m_selected_item->i == hotbar_slot) {
+		m_selected_amount = 0;
+		m_selected_item.reset();
+		m_selected_dragging = false;
+		m_selected_swap.clear();
+		return true;
+	}
+
+	ItemStack at_target = mainlist->getItem(hotbar_slot);
+	if (!at_target.empty()) {
+		IDropAction *drop = new IDropAction();
+		drop->count = 0;
+		drop->from_inv = player_loc;
+		drop->from_list = "main";
+		drop->from_i = hotbar_slot;
+		m_invmgr->inventoryAction(drop);
+	}
+
+	IMoveAction *move = new IMoveAction();
+	move->count = m_selected_amount;
+	move->from_inv = m_selected_item->inventoryloc;
+	move->from_list = m_selected_item->listname;
+	move->from_i = m_selected_item->i;
+	move->to_inv = player_loc;
+	move->to_list = "main";
+	move->to_i = hotbar_slot;
+	m_invmgr->inventoryAction(move);
+
+	m_selected_amount = 0;
+	m_selected_item.reset();
+	m_selected_dragging = false;
+	m_selected_swap.clear();
+	return true;
+}
+
+#endif /* __OHOS__ */

@@ -131,6 +131,7 @@ private:
 #if defined(__OHOS__)
 	static int l_ohos_set_status(lua_State *L);
 	static int l_ohos_set_zip_drop_target(lua_State *L);
+	static int l_ohos_release_pointer(lua_State *L);
 #endif
 
 	static int l_download_file(lua_State *L);
@@ -166,5 +167,8 @@ public:
 	static void Initialize(lua_State *L, int top);
 
 	static void InitializeAsync(lua_State *L, int top);
+
+	/** Content package APIs for pause menu (no GUIEngine). */
+	static void InitializeContentPackages(lua_State *L, int top);
 
 };

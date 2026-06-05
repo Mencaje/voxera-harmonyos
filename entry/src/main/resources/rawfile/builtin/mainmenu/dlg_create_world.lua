@@ -78,7 +78,70 @@ local mgv6_biomes = {
 	},
 }
 
+local function create_world_layout()
+	local layout = {
+		w = 12.25,
+		h = 7.4,
+		top = 0,
+		left_pad = 0.3,
+		btn_y = 6.9,
+		right_x = 6.2,
+		field_w = 6,
+		dd_w = 6.3,
+		cb_step = 0.5,
+		btn_w = 3,
+		btn_h = 0.5,
+		btn_gap = 0.5,
+		label_gap = 0.35,
+		section_gap = 0.4,
+		flags_top = 0,
+		y_world = 0.65,
+		y_seed = 1.75,
+		y_mg_label = 2.05,
+		y_mg_dd = 2.55,
+		field_h = 0.5,
+	}
+	-- OHOS tablet: larger dialog, more spacing, centered action buttons.
+	if PLATFORM == "HarmonyOS" and DEVICE_FORM_FACTOR == "tablet" then
+		layout.w = 15.5
+		layout.h = 9.5
+		layout.top = 0.65
+		layout.left_pad = 0.52
+		layout.btn_y = layout.h - 1.15
+		layout.right_x = 8.35
+		layout.field_w = 7.4
+		layout.field_h = 0.5
+		layout.cb_step = 0.72
+		layout.label_gap = 0.55
+		layout.section_gap = 0.5
+		layout.flags_top = 0.15
+		layout.btn_w = 4.2
+		layout.btn_h = 0.85
+		layout.btn_gap = 0.6
+		layout.y_world = 0.65
+		layout.y_seed = 1.9
+		layout.y_mg_label = 2.45
+		layout.y_mg_dd = 2.95
+	end
+	return layout
+end
+
+local function flag_row_form(layout, y, id, label, selected, tooltip_id, tooltip_text)
+	local sel = (selected == true) and "true" or "false"
+	local row = ("checkbox[0,%f;%s;%s;%s]"):format(y, id, label, sel)
+	if tooltip_id and tooltip_text then
+		row = row .. "tooltip[" .. tooltip_id .. ";" .. core.formspec_escape(tooltip_text) .. "]"
+	end
+	return row, y + layout.cb_step
+end
+
 local function create_world_formspec(dialogdata)
+	local layout = create_world_layout()
+	local dlg_w, dlg_h = layout.w, layout.h
+	local top, btn_y = layout.top, layout.btn_y
+	local right_x, field_w, dd_w = layout.right_x, layout.field_w, layout.dd_w
+	local left_pad = layout.left_pad
+	local field_h = layout.field_h or 0.5
 
 	local current_mg = dialogdata.mg
 	local mapgens = core.get_mapgen_names()
@@ -164,15 +227,15 @@ local function create_world_formspec(dialogdata)
 			return "", y
 		end
 
-		local form = "checkbox[0," .. y .. ";flag_main_caves;" ..
-			fgettext("Caves") .. ";"..strflag(flags.main, "caves").."]"
-		y = y + 0.5
+		local form, ny
+		form, ny = flag_row_form(layout, y, "flag_main_caves", fgettext("Caves"),
+			flags.main.caves, "flag_main_caves", fgettext("Network of tunnels and caves"))
 
-		form = form .. "checkbox[0,"..y..";flag_main_dungeons;" ..
-			fgettext("Dungeons") .. ";"..strflag(flags.main, "dungeons").."]"
-		y = y + 0.5
+		local dungeons_row
+		dungeons_row, ny = flag_row_form(layout, ny, "flag_main_dungeons", fgettext("Dungeons"),
+			flags.main.dungeons)
+		form = form .. dungeons_row
 
-		-- TRANSLATORS: Map generator decorations (used for structures, trees, plants, and more)
 		local d_name = fgettext("Decorations")
 		local d_tt
 		if mapgen == "v6" then
@@ -180,18 +243,10 @@ local function create_world_formspec(dialogdata)
 		else
 			d_tt = fgettext("Structures appearing on the terrain, typically trees and plants")
 		end
-		form = form .. "checkbox[0,"..y..";flag_main_decorations;" ..
-			d_name .. ";" ..
-			strflag(flags.main, "decorations").."]" ..
-			"tooltip[flag_mg_decorations;" ..
-			d_tt ..
-			"]"
-		y = y + 0.5
-
-		form = form .. "tooltip[flag_main_caves;" ..
-		fgettext("Network of tunnels and caves")
-		.. "]"
-		return form, y
+		local deco_row, deco_y = flag_row_form(layout, ny, "flag_main_decorations", d_name,
+			flags.main.decorations, "flag_mg_decorations", d_tt)
+		form = form .. deco_row
+		return form, deco_y
 	end
 
 	local mg_specific_flags = function(mapgen, y)
@@ -204,17 +259,12 @@ local function create_world_formspec(dialogdata)
 		local form = ""
 		for _, tab in pairs(flag_checkboxes[mapgen]) do
 			local id = "flag_"..mapgen.."_"..tab[1]:gsub("_", "-")
-			form = form .. ("checkbox[0,%f;%s;%s;%s]"):
-				format(y, id, tab[2], strflag(flags[mapgen], tab[1]))
-
-			if tab[3] then
-				form = form .. "tooltip["..id..";"..tab[3].."]"
-			end
-			y = y + 0.5
+			local row, ny = flag_row_form(layout, y, id, tab[2], flags[mapgen][tab[1]], id, tab[3])
+			form = form .. row
+			y = ny
 		end
 
 		if mapgen ~= "v6" then
-			-- No special treatment
 			return form, y
 		end
 		-- Special treatment for v6 (add biome widgets)
@@ -244,46 +294,50 @@ local function create_world_formspec(dialogdata)
 
 		-- biomeblend
 		y = y + 0.55
-		form = form .. "checkbox[0,"..y..";flag_v6_biomeblend;" ..
-			-- TRANSLATORS: Smooth transition between biomes
-			fgettext("Biome blending") .. ";"..strflag(flags.v6, "biomeblend").."]" ..
-			"tooltip[flag_v6_biomeblend;" ..
-			fgettext("Smooth transition between biomes") .. "]"
+		local blend_row
+		blend_row, y = flag_row_form(layout, y, "flag_v6_biomeblend",
+			fgettext("Biome blending"), flags.v6.biomeblend,
+			"flag_v6_biomeblend", fgettext("Smooth transition between biomes"))
+		form = form .. blend_row
 
 		return form, y
 	end
 
-	local y_start = 0.0
-	local y = y_start
+	local y_start = layout.flags_top
+	local y = y_start + layout.label_gap
 	local str_flags, str_spflags
 	local label_flags, label_spflags = "", ""
-	y = y + 0.3
 	str_flags, y = mg_main_flags(current_mg, y)
 	if str_flags ~= "" then
-		label_flags = "label[0,"..y_start..";" .. fgettext("Mapgen flags") .. "]"
-		y_start = y + 0.4
+		label_flags = "label[0," .. y_start .. ";" .. fgettext("Mapgen flags") .. "]"
+		y = y + layout.section_gap
 	else
-		y_start = 0.0
+		y = y_start
 	end
-	y = y_start + 0.3
+	local spflags_label_y = y
+	y = y + layout.label_gap
 	str_spflags = mg_specific_flags(current_mg, y)
 	if str_spflags ~= "" then
-		label_spflags = "label[0,"..y_start..";" .. fgettext("Mapgen-specific flags") .. "]"
+		label_spflags = "label[0," .. spflags_label_y .. ";" ..
+			fgettext("Mapgen-specific flags") .. "]"
 	end
 
+	local right_top = top
+	local btn_x = (dlg_w - (layout.btn_w * 2 + layout.btn_gap)) / 2
+
 	local retval =
-		"size[12.25,7.4,true]" ..
+		"size[" .. dlg_w .. "," .. dlg_h .. ",true]" ..
 
 		-- Left side
-		"container[0,0]"..
-		"field[0.3,0.6;6,0.5;te_world_name;" ..
+		"container[0," .. top .. "]"..
+		"field[" .. left_pad .. "," .. layout.y_world .. ";" .. field_w .. ",0.5;te_world_name;" ..
 		fgettext("World name") ..
 		";" .. core.formspec_escape(dialogdata.worldname) .. "]" ..
 		"set_focus[te_world_name;false]"
 
 	if not disallowed_mapgen_settings["seed"] then
 
-		retval = retval .. "field[0.3,1.7;6,0.5;te_seed;" ..
+		retval = retval .. "field[" .. left_pad .. "," .. layout.y_seed .. ";" .. field_w .. ",0.5;te_seed;" ..
 				-- TRANSLATORS: Value for randomness
 				fgettext("Seed") ..
 				";".. core.formspec_escape(dialogdata.seed) .. "]"
@@ -291,8 +345,8 @@ local function create_world_formspec(dialogdata)
 	end
 
 	retval = retval ..
-		"label[0,2;" .. fgettext("Mapgen") .. "]"..
-		"dropdown[0,2.5;6.3;dd_mapgen;" .. mglist .. ";" .. selindex .. "]"
+		"label[" .. left_pad .. "," .. layout.y_mg_label .. ";" .. fgettext("Mapgen") .. "]"..
+		"dropdown[" .. left_pad .. "," .. layout.y_mg_dd .. ";" .. field_w .. ";dd_mapgen;" .. mglist .. ";" .. selindex .. "]"
 
 	-- Warning when making a devtest world
 	if game.id == "devtest" then
@@ -309,15 +363,18 @@ local function create_world_formspec(dialogdata)
 		"container_end[]" ..
 
 		-- Right side
-		"container[6.2,0]"..
+		"container[" .. right_x .. "," .. right_top .. "]"..
 		label_flags .. str_flags ..
 		label_spflags .. str_spflags ..
 		"container_end[]"..
 
 		-- Menu buttons
-		"container[0,6.9]"..
-		"button[3.25,0;3,0.5;world_create_confirm;" .. fgettext("Create") .. "]" ..
-		"button[6.25,0;3,0.5;world_create_cancel;" .. fgettext("Cancel") .. "]" ..
+		"container[0," .. btn_y .. "]"..
+		"button[" .. btn_x .. ",0;" .. layout.btn_w .. "," .. layout.btn_h ..
+			";world_create_confirm;" .. fgettext("Create") .. "]" ..
+		"button[" .. (btn_x + layout.btn_w + layout.btn_gap) .. ",0;" ..
+			layout.btn_w .. "," .. layout.btn_h ..
+			";world_create_cancel;" .. fgettext("Cancel") .. "]" ..
 		"container_end[]"
 
 	return retval

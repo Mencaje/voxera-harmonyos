@@ -19,17 +19,57 @@ function mm_game_theme.init()
 end
 
 --------------------------------------------------------------------------------
+local function ohos_is_phone()
+	return PLATFORM == "HarmonyOS" and DEVICE_FORM_FACTOR == "phone"
+end
+
+local function ohos_clouds_unavailable()
+	return PLATFORM == "HarmonyOS"
+end
+
+-- minetest_game ships only menu/header.png; PC uses 3D menu clouds for the backdrop.
+-- OHOS bundles textures/base/pack/menu_overlay.png as a static cloud substitute.
+
+local function ohos_menu_theme_minimal()
+	if not ohos_is_phone() then
+		return false
+	end
+	mm_game_theme.clear_single("overlay")
+	mm_game_theme.clear_single("header")
+	mm_game_theme.clear_single("footer")
+	core.set_clouds(false)
+	local c = COLORS[core.settings:get("menu_theme")]
+	if c then
+		core.set_clouds_color(c.clouds)
+		core.set_sky_color(c.sky)
+	end
+	return true
+end
+
+--------------------------------------------------------------------------------
 function mm_game_theme.set_engine(hide_decorations)
 	mm_game_theme.gameid = nil
 	mm_game_theme.stop_music()
 
 	core.set_topleft_text("")
 
+	if ohos_menu_theme_minimal() then
+		return
+	end
+
 	local have_bg = false
 	local have_overlay = mm_game_theme.set_engine_single("overlay")
 
 	if not have_overlay then
 		have_bg = mm_game_theme.set_engine_single("background")
+	end
+
+	if ohos_clouds_unavailable() and not have_overlay and not have_bg then
+		if mm_game_theme.set_engine_single("overlay") then
+			have_overlay = true
+		elseif mm_game_theme.set_engine_single("background") then
+			have_bg = true
+		end
 	end
 
 	mm_game_theme.clear_single("header")
@@ -49,7 +89,7 @@ function mm_game_theme.set_engine(hide_decorations)
 		core.set_sky_color(c.sky)
 	end
 
-	if not have_bg then
+	if not have_bg and not have_overlay and not ohos_clouds_unavailable() then
 		core.set_clouds(core.settings:get_bool("menu_clouds"))
 	end
 end
@@ -62,15 +102,38 @@ function mm_game_theme.set_game(gamedetails)
 		return
 	end
 	mm_game_theme.gameid = gamedetails.id
+
+	if ohos_is_phone() then
+		mm_game_theme.stop_music()
+		core.set_topleft_text(gamedetails.name)
+		ohos_menu_theme_minimal()
+		return
+	end
+
 	mm_game_theme.set_music(gamedetails)
 
 	core.set_topleft_text(gamedetails.name)
+
+	if ohos_menu_theme_minimal() then
+		return
+	end
+
+	mm_game_theme.clear_single("overlay")
+	mm_game_theme.clear_single("background")
 
 	local have_bg = false
 	local have_overlay = mm_game_theme.set_game_single("overlay", gamedetails)
 
 	if not have_overlay then
 		have_bg = mm_game_theme.set_game_single("background", gamedetails)
+	end
+
+	if ohos_clouds_unavailable() and not have_overlay and not have_bg then
+		if mm_game_theme.set_engine_single("overlay") then
+			have_overlay = true
+		elseif mm_game_theme.set_engine_single("background") then
+			have_bg = true
+		end
 	end
 
 	mm_game_theme.clear_single("header")
@@ -88,7 +151,7 @@ function mm_game_theme.set_game(gamedetails)
 		core.set_sky_color(c.sky)
 	end
 
-	if not have_bg then
+	if not have_bg and not have_overlay and not ohos_clouds_unavailable() then
 		core.set_clouds(core.settings:get_bool("menu_clouds"))
 	end
 end

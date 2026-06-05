@@ -56,7 +56,7 @@ void COSOperator::copyToPrimarySelection(const c8 *text) const
 		return;
 
 #if defined(_IRR_COMPILE_WITH_SDL_DEVICE_)
-#if SDL_VERSION_ATLEAST(2, 25, 0)
+#if SDL_VERSION_ATLEAST(2, 25, 0) && !defined(__OHOS__)
 	SDL_SetPrimarySelectionText(text);
 #endif
 #endif
@@ -79,7 +79,7 @@ const c8 *COSOperator::getTextFromClipboard() const
 const c8 *COSOperator::getTextFromPrimarySelection() const
 {
 #if defined(_IRR_COMPILE_WITH_SDL_DEVICE_)
-#if SDL_VERSION_ATLEAST(2, 25, 0)
+#if SDL_VERSION_ATLEAST(2, 25, 0) && !defined(__OHOS__)
 	SDL_free(PrimarySelectionText);
 	PrimarySelectionText = SDL_GetPrimarySelectionText();
 	return PrimarySelectionText;

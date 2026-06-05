@@ -283,6 +283,15 @@ public:
 #ifdef __ANDROID__
 	void getAndroidUIInput();
 #endif
+#if defined(__OHOS__)
+	void getOhosUIInput() override;
+#endif
+
+#if defined(__OHOS__)
+	bool ohosPhoneTapSelectActive() const;
+	bool ohosPhoneHasInventorySelection() const;
+	bool ohosPhoneApplyHotbarTap(u16 hotbar_slot);
+#endif
 
 	// Returns the fixed formspec coordinate size for the given parameters.
 	static double getFixedImgsize(double screen_dpi, double gui_scaling);
@@ -361,6 +370,21 @@ protected:
 	ItemStack m_left_drag_stack;
 	std::vector<std::pair<GUIInventoryList::ItemSpec, ItemStack>> m_left_drag_stacks;
 	bool m_left_dragging = false;
+
+#if defined(__OHOS__)
+	bool ohosPhoneOnInventoryInput(const SEvent &event);
+	void ohosPhoneHandleInventoryTap();
+	void ohosPhoneResolveScrollTarget(v2s32 p, GUIScrollBar *&out_bar,
+			GUIScrollContainer *&out_cont);
+	void ohosPhoneApplyScrollDrag(s32 delta_y);
+	void ohosPhoneShowItemDetailTooltip(const std::wstring &text);
+	v2s32 m_ohos_inv_tap_down{-1, -1};
+	v2s32 m_ohos_inv_scroll_last{-1, -1};
+	bool m_ohos_inv_tap_active = false;
+	bool m_ohos_inv_scroll_active = false;
+	GUIScrollBar *m_ohos_inv_scroll_bar = nullptr;
+	GUIScrollContainer *m_ohos_inv_scroll_container = nullptr;
+#endif
 
 	gui::IGUIStaticText *m_tooltip_element = nullptr;
 

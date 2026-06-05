@@ -50,6 +50,18 @@ struct GameFormSpec
 	// Returns false if no formspec open
 	bool handleAndroidUIInput();
 #endif
+#if defined(__OHOS__)
+	bool handleOhosUIInput();
+#endif
+
+#ifdef __OHOS__
+	void updateEscPauseBlock(bool esc_down);
+	void notifyPauseMenuClosed();
+	bool shouldBlockEscPause() const { return m_block_esc_reopen_pause; }
+	bool ohosPhoneApplyHotbarTap(u16 hotbar_slot);
+	bool isPlayerInventoryOpen() const;
+	void closePlayerInventory();
+#endif
 
 private:
 	Client *m_client;
@@ -65,4 +77,9 @@ private:
 	bool handleEmptyFormspec(const std::string &formspec, const std::string &formname);
 
 	void deleteFormspec();
+
+#ifdef __OHOS__
+	// After closing the pause menu while ESC is still held, ignore reopen until release.
+	bool m_block_esc_reopen_pause = false;
+#endif
 };

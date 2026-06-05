@@ -24,6 +24,28 @@ napi_value NapiGetEngineStatus(napi_env env, napi_callback_info /*info*/)
     return result;
 }
 
+napi_value NapiIsInGameWorld(napi_env env, napi_callback_info /*info*/)
+{
+    bool inWorld = false;
+#if VOXERA_LINK_LUANTI
+    inWorld = porting::ohosIsInGameWorld();
+#endif
+    napi_value result;
+    napi_get_boolean(env, inWorld, &result);
+    return result;
+}
+
+napi_value NapiIsPlayerInventoryOpen(napi_env env, napi_callback_info /*info*/)
+{
+    bool open = false;
+#if VOXERA_LINK_LUANTI
+    open = porting::ohosIsPlayerInventoryOpen();
+#endif
+    napi_value result;
+    napi_get_boolean(env, open, &result);
+    return result;
+}
+
 #if VOXERA_LINK_LUANTI
 napi_value NapiPollOhosUiRequest(napi_env env, napi_callback_info /*info*/)
 {
@@ -54,6 +76,28 @@ napi_value NapiCompleteOhosCopyDir(napi_env env, napi_callback_info info)
     napi_get_value_bool(env, args[0], &ok);
 
     porting::ohosCompleteCopyDir(ok);
+
+    napi_value undefined;
+    napi_get_undefined(env, &undefined);
+    return undefined;
+}
+
+napi_value NapiCompleteOhosTextInput(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    bool canceled = false;
+    napi_get_value_bool(env, args[0], &canceled);
+
+    size_t textLen = 0;
+    napi_get_value_string_utf8(env, args[1], nullptr, 0, &textLen);
+    std::string text(textLen + 1, '\0');
+    napi_get_value_string_utf8(env, args[1], text.data(), textLen + 1, &textLen);
+    text.resize(textLen);
+
+    porting::ohosCompleteTextInput(canceled, text);
 
     napi_value undefined;
     napi_get_undefined(env, &undefined);
@@ -97,6 +141,24 @@ napi_value NapiGetOhosZipDropTarget(napi_env env, napi_callback_info /*info*/)
 }
 #endif
 
+napi_value NapiTriggerPhoneGameAction(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    int32_t action = 0;
+    napi_get_value_int32(env, args[0], &action);
+
+#if VOXERA_LINK_LUANTI
+    porting::ohosQueuePhoneGameAction(action);
+#endif
+
+    napi_value undefined;
+    napi_get_undefined(env, &undefined);
+    return undefined;
+}
+
 napi_value NapiInjectKeyEvent(napi_env env, napi_callback_info info)
 {
     size_t argc = 2;
@@ -130,6 +192,50 @@ napi_value NapiInjectMouseMotion(napi_env env, napi_callback_info info)
 
 #if VOXERA_LINK_LUANTI
     porting::ohosInjectMouseMotion(dx, dy);
+#endif
+
+    napi_value undefined;
+    napi_get_undefined(env, &undefined);
+    return undefined;
+}
+
+napi_value NapiInjectClick(napi_env env, napi_callback_info info)
+{
+    size_t argc = 2;
+    napi_value args[2];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    double x = 0.0;
+    double y = 0.0;
+    napi_get_value_double(env, args[0], &x);
+    napi_get_value_double(env, args[1], &y);
+
+#if VOXERA_LINK_LUANTI
+    porting::ohosInjectClick(static_cast<float>(x), static_cast<float>(y));
+#endif
+
+    napi_value undefined;
+    napi_get_undefined(env, &undefined);
+    return undefined;
+}
+
+napi_value NapiInjectTouch(napi_env env, napi_callback_info info)
+{
+    size_t argc = 4;
+    napi_value args[4];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    double x = 0.0;
+    double y = 0.0;
+    int32_t action = 0;
+    int32_t fingerId = 0;
+    napi_get_value_double(env, args[0], &x);
+    napi_get_value_double(env, args[1], &y);
+    napi_get_value_int32(env, args[2], &action);
+    napi_get_value_int32(env, args[3], &fingerId);
+
+#if VOXERA_LINK_LUANTI
+    porting::ohosInjectTouch(static_cast<float>(x), static_cast<float>(y), action, fingerId);
 #endif
 
     napi_value undefined;
@@ -187,6 +293,75 @@ napi_value NapiSetPublicUserDataDir(napi_env env, napi_callback_info info)
     return undefined;
 }
 
+napi_value NapiSetDeviceFormFactor(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    size_t len = 0;
+    napi_get_value_string_utf8(env, args[0], nullptr, 0, &len);
+
+    std::string deviceType(len + 1, '\0');
+    napi_get_value_string_utf8(env, args[0], deviceType.data(), len + 1, &len);
+    deviceType.resize(len);
+
+    voxera::SetDeviceFormFactor(deviceType.c_str());
+
+    napi_value undefined;
+    napi_get_undefined(env, &undefined);
+    return undefined;
+}
+
+napi_value NapiGetNativePauseActive(napi_env env, napi_callback_info /*info*/)
+{
+    bool active = false;
+#if VOXERA_LINK_LUANTI
+    active = porting::ohosGetNativePauseActive();
+#endif
+    napi_value result;
+    napi_get_boolean(env, active, &result);
+    return result;
+}
+
+napi_value NapiSetNativePauseActive(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    bool active = false;
+    napi_get_value_bool(env, args[0], &active);
+
+#if VOXERA_LINK_LUANTI
+    porting::ohosSetNativePauseActive(active);
+#endif
+
+    napi_value undefined;
+    napi_get_undefined(env, &undefined);
+    return undefined;
+}
+
+napi_value NapiNativePauseExitMenu(napi_env env, napi_callback_info /*info*/)
+{
+#if VOXERA_LINK_LUANTI
+    porting::ohosNativePauseExitMenu();
+#endif
+    napi_value undefined;
+    napi_get_undefined(env, &undefined);
+    return undefined;
+}
+
+napi_value NapiNativePauseExitOS(napi_env env, napi_callback_info /*info*/)
+{
+#if VOXERA_LINK_LUANTI
+    porting::ohosNativePauseExitOS();
+#endif
+    napi_value undefined;
+    napi_get_undefined(env, &undefined);
+    return undefined;
+}
+
 napi_value Init(napi_env env, napi_value exports)
 {
     // XComponent invokes Init with OH_NATIVE_XCOMPONENT_OBJ; ArkTS import does not.
@@ -196,15 +371,26 @@ napi_value Init(napi_env env, napi_value exports)
 
     napi_property_descriptor props[] = {
         {"getEngineStatus", nullptr, NapiGetEngineStatus, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"isInGameWorld", nullptr, NapiIsInGameWorld, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"isPlayerInventoryOpen", nullptr, NapiIsPlayerInventoryOpen, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setAppDataPaths", nullptr, NapiSetAppDataPaths, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setPublicUserDataDir", nullptr, NapiSetPublicUserDataDir, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setDeviceFormFactor", nullptr, NapiSetDeviceFormFactor, nullptr, nullptr, nullptr, napi_default, nullptr},
 #if VOXERA_LINK_LUANTI
         {"pollOhosUiRequest", nullptr, NapiPollOhosUiRequest, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"completeOhosFilePick", nullptr, NapiCompleteOhosFilePick, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"completeOhosCopyDir", nullptr, NapiCompleteOhosCopyDir, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"completeOhosTextInput", nullptr, NapiCompleteOhosTextInput, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"getOhosZipDropTarget", nullptr, NapiGetOhosZipDropTarget, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"injectKeyEvent", nullptr, NapiInjectKeyEvent, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"triggerPhoneGameAction", nullptr, NapiTriggerPhoneGameAction, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"injectMouseMotion", nullptr, NapiInjectMouseMotion, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"injectTouch", nullptr, NapiInjectTouch, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"injectClick", nullptr, NapiInjectClick, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"getNativePauseActive", nullptr, NapiGetNativePauseActive, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setNativePauseActive", nullptr, NapiSetNativePauseActive, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"nativePauseExitMenu", nullptr, NapiNativePauseExitMenu, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"nativePauseExitOS", nullptr, NapiNativePauseExitOS, nullptr, nullptr, nullptr, napi_default, nullptr},
 #endif
     };
     napi_define_properties(env, exports, sizeof(props) / sizeof(props[0]), props);

@@ -240,8 +240,8 @@ void onNativeTouch(OH_NativeXComponent *component, void *window)
     ohosTouch.y = tiltY;
     ohosTouch.p = touchEvent.force;
     
-    SDL_Window* curWindow = GetWindowFromXComponent(component);
-    if (window == nullptr) {
+    SDL_Window *curWindow = GetWindowFromXComponent(component);
+    if (curWindow == nullptr) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Get cur window error");
         SDL_UnlockMutex(g_ohosPageMutex);
         return;
@@ -527,6 +527,11 @@ extern "C" void OHOS_VoxeraInjectKeyEventPlugin(int keycode, int down)
 extern "C" void OHOS_VoxeraInjectMouseMotionPlugin(int dx, int dy)
 {
     OHOS_QueueMouseMotion(dx, dy);
+}
+
+extern "C" void OHOS_VoxeraDispatchTouchEventPlugin(OH_NativeXComponent *component, void *window)
+{
+    onNativeTouch(component, window);
 }
 
 extern "C" bool OHOS_VoxeraRegisterInputCallbacksPlugin(OH_NativeXComponent *component)

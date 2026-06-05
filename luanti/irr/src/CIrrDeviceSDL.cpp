@@ -47,6 +47,7 @@ void ohosNotifyFullscreen(bool enabled);
 bool ohosIsFullscreen();
 void ohosPollPendingKeys();
 void ohosPollPendingMouse();
+void ohosPollPendingTouch();
 }
 #include <GLES3/gl3.h>
 #endif
@@ -749,26 +750,28 @@ bool CIrrDeviceSDL::createWindowWithContext()
 	}
 
 #ifdef __OHOS__
-	if (SDL_GL_LoadLibrary(NULL) < 0) {
-		const char *err = SDL_GetError();
-		os::Printer::log("OHOS: SDL_GL_LoadLibrary failed", err, ELL_WARNING);
-		porting_ohosEngineStatusSet(err && err[0] ? err : "OHOS: SDL_GL_LoadLibrary failed");
-		return false;
-	}
-	OH_NativeXComponent *nativeComponent = porting_ohosGetNativeXComponent();
-	if (nativeComponent) {
-		porting_ohosPrepareSdlWindow(nativeComponent);
-		Window = SDL_CreateWindowFrom(nativeComponent);
-		if (!Window) {
+	if (!Window) {
+		if (SDL_GL_LoadLibrary(NULL) < 0) {
 			const char *err = SDL_GetError();
-			os::Printer::log("Could not create window from XComponent", err, ELL_WARNING);
-			porting_ohosEngineStatusSet(err && err[0] ? err : "SDL_CreateWindowFrom failed");
+			os::Printer::log("OHOS: SDL_GL_LoadLibrary failed", err, ELL_WARNING);
+			porting_ohosEngineStatusSet(err && err[0] ? err : "OHOS: SDL_GL_LoadLibrary failed");
 			return false;
 		}
-	} else {
-		os::Printer::log("OHOS: native XComponent not ready", ELL_WARNING);
-		porting_ohosEngineStatusSet("OHOS: native XComponent not ready");
-		return false;
+		OH_NativeXComponent *nativeComponent = porting_ohosGetNativeXComponent();
+		if (nativeComponent) {
+			porting_ohosPrepareSdlWindow(nativeComponent);
+			Window = SDL_CreateWindowFrom(nativeComponent);
+			if (!Window) {
+				const char *err = SDL_GetError();
+				os::Printer::log("Could not create window from XComponent", err, ELL_WARNING);
+				porting_ohosEngineStatusSet(err && err[0] ? err : "SDL_CreateWindowFrom failed");
+				return false;
+			}
+		} else {
+			os::Printer::log("OHOS: native XComponent not ready", ELL_WARNING);
+			porting_ohosEngineStatusSet("OHOS: native XComponent not ready");
+			return false;
+		}
 	}
 #elif defined(_IRR_USE_SDL3_)
 	Window = SDL_CreateWindow("", Width, Height, SDL_Flags);
@@ -786,9 +789,12 @@ bool CIrrDeviceSDL::createWindowWithContext()
 		os::Printer::log("Could not create context", err, ELL_WARNING);
 #ifdef __OHOS__
 		porting_ohosEngineStatusSet(err && err[0] ? err : "OHOS: SDL_GL_CreateContext failed");
-#endif
+		/* Foreign XComponent is owned by ArkUI — keep window for GL attribute retries. */
+		return false;
+#else
 		SDL_DestroyWindow(Window);
 		Window = nullptr;
+#endif
 		return false;
 	}
 
@@ -901,6 +907,7 @@ bool CIrrDeviceSDL::run()
 #ifdef __OHOS__
 	porting::ohosPollPendingKeys();
 	porting::ohosPollPendingMouse();
+	porting::ohosPollPendingTouch();
 	/* Keyboard focus is set in OHOS_CreateWindowFrom; SDL_SetKeyboardFocus is not
 	 * in the public SDL2 headers shipped with ohos_deps. */
 #endif

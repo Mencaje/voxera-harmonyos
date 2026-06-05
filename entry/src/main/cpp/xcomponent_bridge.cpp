@@ -33,14 +33,13 @@ void OnSurfaceDestroyed(OH_NativeXComponent * /*component*/, void * /*window*/)
     voxera::OnSurfaceDestroyed();
 }
 
-void DispatchTouchEvent(OH_NativeXComponent * /*component*/, void * /*window*/) {}
-
 // Must outlive RegisterCallback — stack-local callback caused SIGSEGV on surface create.
+// Touch only via ArkUI overlay (native + overlay = double-click -> menu crash on ARM).
 static OH_NativeXComponent_Callback g_xcomponentCallback = {
     .OnSurfaceCreated = OnSurfaceCreated,
     .OnSurfaceChanged = OnSurfaceChanged,
     .OnSurfaceDestroyed = OnSurfaceDestroyed,
-    .DispatchTouchEvent = DispatchTouchEvent,
+    .DispatchTouchEvent = nullptr,
 };
 
 bool RegisterXComponentCallbacks(OH_NativeXComponent *component)

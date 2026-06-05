@@ -14,6 +14,10 @@ local valid_disabled_settings = {
 local current_name = core.settings:get("name")
 local current_port = core.settings:get("port")
 
+local function ohos_is_phone()
+	return PLATFORM == "HarmonyOS" and DEVICE_FORM_FACTOR == "phone"
+end
+
 -- Currently chosen game in gamebar for theming and filtering
 function current_game()
 	local gameid = core.settings:get("menu_last_game")
@@ -60,7 +64,20 @@ end
 
 function singleplayer_refresh_gamebar()
 
+	if ohos_is_phone() then
+		local old_bar = ui.find_by_name("game_button_bar")
+		if old_bar ~= nil then
+			old_bar:delete()
+		end
+		return false
+	end
+
 	local old_bar = ui.find_by_name("game_button_bar")
+	-- OHOS: rebuilding the gamebar reloads N menu textures; skip if game list unchanged.
+	if PLATFORM == "HarmonyOS" and old_bar ~= nil and old_bar._ohos_game_count == #pkgmgr.games then
+		return true
+	end
+
 	if old_bar ~= nil then
 		old_bar:delete()
 	end
@@ -99,7 +116,8 @@ function singleplayer_refresh_gamebar()
 		local text = nil
 		local tooltip = core.formspec_escape(game.title)
 
-		if (game.menuicon_path or "") ~= "" then
+		-- OHOS phone: loading many menu icons in one formspec rebuild can SIGABRT on CPU GLES.
+		if not ohos_is_phone() and (game.menuicon_path or "") ~= "" then
 			image = core.formspec_escape(game.menuicon_path)
 		else
 			local part1 = game.id:sub(1,5)
@@ -116,6 +134,9 @@ function singleplayer_refresh_gamebar()
 
 	local plus_image = core.formspec_escape(defaulttexturedir .. "plus.png")
 	btnbar:add_button("game_open_cdb", "", plus_image, fgettext("Install a game from a downloaded .zip package"))
+	if PLATFORM == "HarmonyOS" then
+		btnbar._ohos_game_count = #pkgmgr.games
+	end
 	return true
 end
 
@@ -147,17 +168,30 @@ end
 
 local function get_formspec(tabview, name, tabdata)
 
+	-- OHOS phone: native ArkUI replaces this tab (install gate + local game UI).
+	if ohos_is_phone() then
+		return ""
+	end
+
 	-- Point the player to ContentDB when no games are found
 	if #pkgmgr.games == 0 then
 		local W = tabview.width
 		local H = tabview.height
+		local button_y = H * 2/3 - 0.6
+		-- OHOS: hypertext is heavy on embedded GLES; use label + button only.
+		if PLATFORM == "HarmonyOS" then
+			local msg = fgettext_ne("You need to install a game before you can create a world.")
+			return table.concat({
+				"label[0.5,1;", W - 1, ",2;", core.formspec_escape(msg), "]",
+				"button[5.25,", button_y, ";5,1.2;game_open_cdb;", fgettext("Install a game"), "]",
+			})
+		end
 
 		local hypertext = "<global valign=middle halign=center size=18>" ..
 				fgettext_ne("Luanti is a game-creation platform that allows you to play many different games.") .. "\n" ..
 				fgettext_ne("Luanti doesn't come with a game by default.") .. " " ..
 				fgettext_ne("You need to install a game before you can create a world.")
 
-		local button_y = H * 2/3 - 0.6
 		return table.concat({
 			"hypertext[0.375,0;", W - 2*0.375, ",", button_y, ";ht;", core.formspec_escape(hypertext), "]",
 			"button[5.25,", button_y, ";5,1.2;game_open_cdb;", fgettext("Install a game"), "]"})
@@ -274,6 +308,32 @@ local function main_button_handler(this, fields, name, tabdata)
 	assert(name == "local")
 
 	if fields.game_open_cdb then
+		if PLATFORM == "HarmonyOS" then
+			if core.ohos_release_pointer then
+				core.ohos_release_pointer()
+			end
+			local now = core.get_us_time()
+			if this._ohos_install_btn_us and (now - this._ohos_install_btn_us) < 400000 then
+				return true
+			end
+			this._ohos_install_btn_us = now
+			-- Defer past touch-up + current formspec click (same-tick open crashed on ARM GLES).
+			core.after(0, function()
+				if core.ohos_release_pointer then
+					core.ohos_release_pointer()
+				end
+				local maintab = ui.find_by_name("maintab")
+				if not maintab then
+					return
+				end
+				local dlg = create_local_game_install_dlg()
+				dlg:set_parent(maintab)
+				maintab:hide()
+				dlg:show()
+				ui.update()
+			end)
+			return true
+		end
 		local maintab = ui.find_by_name("maintab")
 		local dlg = create_local_game_install_dlg()
 		dlg:set_parent(maintab)
@@ -445,16 +505,39 @@ local function main_button_handler(this, fields, name, tabdata)
 end
 
 local function on_change(type)
+	if PLATFORM == "HarmonyOS" and core.ohos_release_pointer then
+		core.ohos_release_pointer()
+	end
 	if type == "ENTER" then
-		local game = current_game()
-		if game then
-			apply_game(game)
-		else
-			mm_game_theme.set_engine()
+		local function enter_local_tab()
+			local game = current_game()
+			if PLATFORM == "HarmonyOS" then
+				-- Avoid reloading menu backgrounds on every tab switch (GLES crash on ARM).
+				if game and mm_game_theme.gameid ~= game.id then
+					apply_game(game)
+				end
+				-- No game: theme already set at menu init; do not call set_engine() again.
+			else
+				if game then
+					apply_game(game)
+				else
+					mm_game_theme.set_engine()
+				end
+			end
+			if singleplayer_refresh_gamebar() then
+				local bar = ui.find_by_name("game_button_bar")
+				if bar then
+					bar:show()
+				end
+			end
 		end
-
-		if singleplayer_refresh_gamebar() then
-			ui.find_by_name("game_button_bar"):show()
+		if PLATFORM == "HarmonyOS" then
+			if core.ohos_release_pointer then
+				core.ohos_release_pointer()
+			end
+			core.after(0, enter_local_tab)
+		else
+			enter_local_tab()
 		end
 	elseif type == "LEAVE" then
 		menudata.worldlist:set_filtercriteria(nil)

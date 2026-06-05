@@ -3,6 +3,10 @@ import { deviceInfo } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 
+import { AppStageHolder } from '../util/AppStageHolder';
+import { TabletWindowHelper } from '../util/TabletWindowHelper';
+import { PhoneWindowHelper } from '../util/PhoneWindowHelper';
+
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
@@ -20,9 +24,10 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    // Main window is created, set main page for this ability
+    AppStageHolder.set(windowStage);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
+    /* Load Game immediately so system start window (layer 1) hands off to layer 2 on first frame. */
     windowStage.loadContent('pages/Game', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'testTag', 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
@@ -31,18 +36,20 @@ export default class EntryAbility extends UIAbility {
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
     });
 
-    // PC/2in1: hide system title bar (icon + "Voxera"); keep minimize/maximize/close via decor height.
-    // @see window.Window.setWindowDecorVisible / setWindowDecorHeight (API 12+, 2in1)
-    windowStage.getMainWindow().then((win: window.Window) => {
-      if (deviceInfo.deviceType !== '2in1') {
-        return;
-      }
+    /* Landscape + immersive in parallel — must not block loadContent (was eating layer 1). */
+    windowStage.getMainWindow().then(async (win: window.Window) => {
       try {
-        win.setWindowDecorVisible(false);
-        win.setWindowDecorHeight(64);
-        hilog.info(DOMAIN, 'testTag', '2in1 window decor hidden, title button area height=64vp');
+        if (deviceInfo.deviceType === 'tablet') {
+          await TabletWindowHelper.applyGameWindow(this.context);
+        } else if (deviceInfo.deviceType === 'phone' || deviceInfo.deviceType === 'default') {
+          await PhoneWindowHelper.applyGameWindow(this.context);
+        } else if (deviceInfo.deviceType === '2in1') {
+          win.setWindowDecorVisible(false);
+          win.setWindowDecorHeight(64);
+          hilog.info(DOMAIN, 'testTag', '2in1 window decor hidden, title button area height=64vp');
+        }
       } catch (err) {
-        hilog.warn(DOMAIN, 'testTag', 'setWindowDecorVisible failed: %{public}s', JSON.stringify(err));
+        hilog.warn(DOMAIN, 'testTag', 'window setup failed: %{public}s', JSON.stringify(err));
       }
     }).catch((err: Error) => {
       hilog.error(DOMAIN, 'testTag', 'getMainWindow failed: %{public}s', JSON.stringify(err));
@@ -50,17 +57,14 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageDestroy(): void {
-    // Main window is destroyed, release UI related resources
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
   }
 
   onForeground(): void {
-    // Ability has brought to foreground
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
 
   onBackground(): void {
-    // Ability has back to background
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }
 }

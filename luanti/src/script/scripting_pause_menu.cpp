@@ -7,10 +7,12 @@
 #include "cpp_api/s_internal.h"
 #include "filesys.h"
 #include "lua_api/l_client_common.h"
+#include "lua_api/l_mainmenu.h"
 #include "lua_api/l_menu_common.h"
 #include "lua_api/l_pause_menu.h"
 #include "lua_api/l_settings.h"
 #include "lua_api/l_util.h"
+#include "porting.h"
 
 PauseMenuScripting::PauseMenuScripting(Client *client):
 		ScriptApiBase(ScriptingType::PauseMenu)
@@ -45,6 +47,10 @@ void PauseMenuScripting::initializeModApi(lua_State *L, int top)
 	ModApiMenuCommon::Initialize(L, top);
 	ModApiClientCommon::Initialize(L, top);
 	ModApiUtil::Initialize(L, top);
+#if defined(__OHOS__)
+	// Phone pause menu Content tab uses pkgmgr / phone_native_content bridges.
+	ModApiMainMenu::InitializeContentPackages(L, top);
+#endif
 }
 
 void PauseMenuScripting::loadBuiltin()
@@ -53,17 +59,55 @@ void PauseMenuScripting::loadBuiltin()
 	checkSetByBuiltin();
 }
 
+void PauseMenuScripting::step()
+{
+	SCRIPTAPI_PRECHECKHEADER
+
+	int error_handler = PUSH_ERROR_HANDLER(L);
+
+	lua_getglobal(L, "core");
+	lua_getfield(L, -1, "run_mainmenu_after_step");
+	lua_remove(L, -2);
+	if (lua_isfunction(L, -1)) {
+		lua_pushnumber(L, 0);
+		PCALL_RES(lua_pcall(L, 1, 0, error_handler));
+	} else {
+		lua_pop(L, 1);
+	}
+
+	lua_pop(L, 1); // Pop error handler
+}
+
+static bool pause_menu_may_modify_path(const std::string &path)
+{
+	std::string path_temp = fs::AbsolutePathPartial(fs::TempPath());
+	if (fs::PathStartsWith(path, path_temp))
+		return true;
+
+	std::string path_user = fs::AbsolutePathPartial(porting::path_user);
+	if (fs::PathStartsWith(path, path_user))
+		return true;
+
+	if (fs::PathStartsWith(path, fs::AbsolutePathPartial(porting::path_cache)))
+		return true;
+
+	return false;
+}
+
 bool PauseMenuScripting::checkPathInternal(const std::string &abs_path, bool write_required,
 		bool *write_allowed)
 {
-	// NOTE: The pause menu env is on the same level of trust as the mainmenu env.
-	// However, since it doesn't need anything else at the moment, there's no
-	// reason to give it access to anything else.
-	// See also: `MainMenuScripting::mayModifyPath` for similar, but less restricted checks.
+	// Same cache/user/temp write policy as main menu — phone native settings/content
+	// bridges persist JSON state under path_cache via core.safe_file_write.
+	if (pause_menu_may_modify_path(abs_path)) {
+		if (write_allowed)
+			*write_allowed = true;
+		return true;
+	}
 
 	if (write_required)
 		return false;
 
-	std::string path_builtin = fs::AbsolutePath(Client::getBuiltinLuaPath());
-	return !path_builtin.empty() && fs::PathStartsWith(abs_path, path_builtin);
+	// Read-only: same as main menu — allow listing share/user content paths.
+	return true;
 }

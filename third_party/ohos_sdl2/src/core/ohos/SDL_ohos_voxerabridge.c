@@ -14,6 +14,7 @@ extern bool OHOS_VoxeraRegisterPluginSurface(OH_NativeXComponent *component, voi
 extern void OHOS_VoxeraClearPluginEglSurface(OH_NativeXComponent *component);
 extern void OHOS_VoxeraNotifySurfaceChangedPlugin(OH_NativeXComponent *component, void *nativeWindow);
 extern bool OHOS_VoxeraRegisterInputCallbacksPlugin(OH_NativeXComponent *component);
+extern void OHOS_VoxeraDispatchTouchEventPlugin(OH_NativeXComponent *component, void *window);
 extern void OHOS_VoxeraInjectKeyEventPlugin(int keycode, int down);
 extern void OHOS_VoxeraInjectMouseMotionPlugin(int dx, int dy);
 extern void OHOS_VoxeraSetRelativeMouseNotifierPlugin(OHOS_VoxeraRelativeMouseNotifier notifier);
@@ -61,4 +62,11 @@ void OHOS_VoxeraInjectMouseMotion(int dx, int dy)
 void OHOS_VoxeraSetRelativeMouseNotifier(OHOS_VoxeraRelativeMouseNotifier notifier)
 {
     OHOS_VoxeraSetRelativeMouseNotifierPlugin(notifier);
+}
+
+void OHOS_VoxeraDispatchTouchEvent(OH_NativeXComponent *component, void *window)
+{
+    if (component && window) {
+        OHOS_VoxeraDispatchTouchEventPlugin(component, window);
+    }
 }

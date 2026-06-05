@@ -20,6 +20,9 @@
 #include "gui/guiOpenURL.h"
 #include "gui/guiVolumeChange.h"
 #include "localplayer.h"
+#if defined(__OHOS__)
+#include "porting_ohos.h"
+#endif
 
 /*
 	Text input system
@@ -357,6 +360,14 @@ void GameFormSpec::showPlayerInventory(const std::string *fs_override)
 
 void GameFormSpec::showPauseMenu()
 {
+#ifdef __OHOS__
+	// Phone singleplayer uses native ArkUI pause (entry PhoneInGamePauseOverlay).
+	if (porting::ohosGetDeviceFormFactor() == "phone" && m_client->m_simple_singleplayer_mode) {
+		porting::ohosSetNativePauseActive(true);
+		return;
+	}
+#endif
+
 	std::string control_text;
 
 	if (g_touchcontrols) {
@@ -377,11 +388,19 @@ void GameFormSpec::showPauseMenu()
 
 	auto simple_singleplayer_mode = m_client->m_simple_singleplayer_mode;
 
-	float ypos = simple_singleplayer_mode ? 0.7f : 0.1f;
+	float ypos = 0.1f;
 	std::ostringstream os;
 
-	os << "formspec_version[1]" << SIZE_TAG
-		<< "button_exit[4," << (ypos++) << ";3,0.5;btn_continue;"
+	os << "formspec_version[1]" << SIZE_TAG;
+
+	if (simple_singleplayer_mode) {
+		/* label[x,y;text] only (formspec v1) — field[] overlapped Continue on touch;
+		 * label[x,y;w,h;text] is invalid and is rejected by the parser. */
+		os << "label[4," << ypos << ";" << strgettext("Game paused") << "]";
+		ypos += 0.55f;
+	}
+
+	os << "button_exit[4," << (ypos++) << ";3,0.5;btn_continue;"
 		// TRANSLATORS: Pause menu button, try to keep the translation short
 		<< strgettext("Continue") << "]";
 
@@ -389,8 +408,6 @@ void GameFormSpec::showPauseMenu()
 		os << "button[4," << (ypos++) << ";3,0.5;btn_change_password;"
 			// TRANSLATORS: Pause menu button, try to keep the translation short
 			<< strgettext("Change Password") << "]";
-	} else {
-		os << "field[4.95,0;5,1.5;;" << strgettext("Game paused") << ";]";
 	}
 
 	os	<< "button[4," << (ypos++) << ";3,0.5;btn_settings;"
@@ -503,11 +520,24 @@ void GameFormSpec::update()
 	   1. Delete formspec menu reference if menu was removed
 	   2. Else, make sure formspec menu is on top
 	*/
+#ifdef __OHOS__
+	if (!m_formspec) {
+		porting::ohosSetPlayerInventoryOpen(false);
+		return;
+	}
+	porting::ohosSetPlayerInventoryOpen(
+		m_formspec->getFormspecLocation().type == InventoryLocation::CURRENT_PLAYER);
+#else
 	if (!m_formspec)
 		return;
+#endif
 
 	if (m_formspec->getReferenceCount() == 1) {
 		// See GUIFormSpecMenu::create what refcnt = 1 means
+#ifdef __OHOS__
+		if (m_formspec->doPause)
+			m_block_esc_reopen_pause = true;
+#endif
 		this->deleteFormspec();
 		return;
 	}
@@ -534,9 +564,66 @@ void GameFormSpec::disableDebugView()
 
 /* returns false if game should exit, otherwise true
  */
+#ifdef __OHOS__
+void GameFormSpec::notifyPauseMenuClosed()
+{
+	m_block_esc_reopen_pause = true;
+}
+
+void GameFormSpec::updateEscPauseBlock(bool esc_down)
+{
+	if (m_block_esc_reopen_pause && !esc_down)
+		m_block_esc_reopen_pause = false;
+}
+
+bool GameFormSpec::ohosPhoneApplyHotbarTap(u16 hotbar_slot)
+{
+	if (!m_formspec)
+		return false;
+	return m_formspec->ohosPhoneApplyHotbarTap(hotbar_slot);
+}
+
+bool GameFormSpec::isPlayerInventoryOpen() const
+{
+	return m_formspec &&
+		m_formspec->getFormspecLocation().type == InventoryLocation::CURRENT_PLAYER;
+}
+
+void GameFormSpec::closePlayerInventory()
+{
+	if (isPlayerInventoryOpen())
+		m_formspec->quitMenu();
+}
+#endif
+
 bool GameFormSpec::handleCallbacks()
 {
 	auto texture_src = m_client->getTextureSource();
+
+#ifdef __OHOS__
+	if (porting::ohosGetDeviceFormFactor() == "phone") {
+		m_pause_script->step();
+		std::string pick_form;
+		std::string pick_path;
+		bool pick_ok = false;
+		while (porting::ohosTakePickResult(pick_form, pick_path, pick_ok)) {
+			/* Main-menu picks (phone_native_local, etc.) must not reach pause Lua or
+			 * overwrite engine status while in_game — that hid PhoneGameControls. */
+			if (pick_form != "phone_native_settings" &&
+					pick_form != "phone_native_content") {
+				infostream << "GameFormSpec: drop in-game pick form="
+						<< pick_form << std::endl;
+				continue;
+			}
+			StringMap fields;
+			if (pick_ok)
+				fields[pick_form + "_accepted"] = pick_path;
+			else
+				fields[pick_form + "_canceled"] = pick_form;
+			m_pause_script->handlePauseMenuButtons(fields);
+		}
+	}
+#endif
 
 	if (g_gamecallback->disconnect_requested) {
 		g_gamecallback->disconnect_requested = false;
@@ -575,6 +662,30 @@ bool GameFormSpec::handleCallbacks()
 	return true;
 }
 
+namespace porting {
+
+void ohosNativePauseExitMenu()
+{
+	ohosSetNativePauseActive(false);
+	if (g_gamecallback)
+		g_gamecallback->disconnect_requested = true;
+}
+
+void ohosNativePauseExitOS()
+{
+	ohosSetNativePauseActive(false);
+	ohosSetInGameWorld(false);
+	if (g_gamecallback)
+		g_gamecallback->exitToOS();
+#ifndef __ANDROID__
+	if (auto *device = RenderingEngine::get_raw_device())
+		device->closeDevice();
+#endif
+	ohosRequestStop();
+}
+
+} // namespace porting
+
 #ifdef __ANDROID__
 bool GameFormSpec::handleAndroidUIInput()
 {
@@ -582,6 +693,18 @@ bool GameFormSpec::handleAndroidUIInput()
 	GUIModalMenu *menu = g_menumgr.tryGetTopMenu();
 	if (menu) {
 		menu->getAndroidUIInput();
+		return true;
+	}
+	return false;
+}
+#endif
+
+#if defined(__OHOS__)
+bool GameFormSpec::handleOhosUIInput()
+{
+	GUIModalMenu *menu = g_menumgr.tryGetTopMenu();
+	if (menu) {
+		menu->getOhosUIInput();
 		return true;
 	}
 	return false;

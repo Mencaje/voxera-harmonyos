@@ -11,6 +11,9 @@
 #ifdef __ANDROID__
 	#include <porting_android.h>
 #endif
+#ifdef __OHOS__
+	#include "porting_ohos.h"
+#endif
 
 struct PointerAction {
 	v2s32 pos;
@@ -54,6 +57,10 @@ public:
 	virtual void getAndroidUIInput() {};
 	porting::AndroidDialogState getAndroidUIInputState();
 #endif
+#if defined(__OHOS__)
+	virtual void getOhosUIInput() {};
+	porting::OhosDialogState getOhosUIInputState();
+#endif
 
 protected:
 	virtual std::wstring getLabelByID(s32 id) = 0;
@@ -67,7 +74,7 @@ protected:
 
 	v2u32 m_screensize_old;
 	float m_gui_scale;
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__OHOS__)
 	std::string m_jni_field_name;
 #endif
 

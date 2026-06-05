@@ -818,6 +818,447 @@ local function eventhandler(event)
 end
 
 
+-- -------------------------------------------------------------------------
+-- HarmonyOS phone native settings (JSON bridge; same pages/filters as dlg_settings)
+-- -------------------------------------------------------------------------
+
+local phone_settings_query = ""
+local phone_settings_page_id = nil
+
+local function phone_settings_show_label(setting)
+	local show_technical_names = core.settings:get_bool("show_technical_names")
+	if not show_technical_names and setting.readable_name then
+		return fgettext(setting.readable_name)
+	end
+	return setting.name
+end
+
+local function phone_settings_default_text(setting)
+	local default = setting.default
+	if setting.type == "bool" then
+		if default == "true" then
+			return fgettext_ne("Enabled")
+		elseif default == "false" then
+			return fgettext_ne("Disabled")
+		end
+	elseif setting.type == "key" then
+		return (default ~= "") and core.get_key_description(default) or fgettext_ne("Not bound")
+	elseif setting.type == "enum" then
+		local labels = setting.option_labels or {}
+		if labels[default] then
+			return fgettext(labels[default])
+		end
+	elseif default == "" then
+		return fgettext_ne("<empty>")
+	end
+	return tostring(default or "")
+end
+
+local function phone_settings_shadow_item()
+	local labels = {
+		fgettext("Disabled"),
+		fgettext("Very Low"),
+		fgettext("Low"),
+		fgettext("Medium"),
+		fgettext("High"),
+		fgettext("Very High"),
+		fgettext("Custom"),
+	}
+	local idx = 1
+	if shadows_component and shadows_component.get_formspec then
+		-- Reuse component state via formspec side effect on detect - use shadows logic inline
+		if core.settings:get_bool("enable_dynamic_shadows", false) then
+			idx = 6 -- custom fallback; refined below
+		end
+	end
+	if not core.settings:get_bool("enable_dynamic_shadows", false) then
+		idx = 1
+	else
+		local shadow_map_max_distance = tonumber(core.settings:get("shadow_map_max_distance"))
+		local shadow_map_texture_size = tonumber(core.settings:get("shadow_map_texture_size"))
+		local shadow_map_texture_32bit = core.settings:get_bool("shadow_map_texture_32bit")
+		local shadow_filters = tonumber(core.settings:get("shadow_filters"))
+		local shadow_map_color = core.settings:get_bool("shadow_map_color")
+		local presets = {
+			[2] = { 62, 512, true, 0, false },
+			[3] = { 93, 1024, true, 0, false },
+			[4] = { 140, 2048, true, 1, false },
+			[5] = { 210, 4096, true, 2, true },
+			[6] = { 300, 8192, true, 2, true },
+		}
+		idx = 7
+		for i = 2, 6 do
+			local p = presets[i]
+			if p[1] == shadow_map_max_distance and p[2] == shadow_map_texture_size and
+					p[3] == shadow_map_texture_32bit and p[4] == shadow_filters and p[5] == shadow_map_color then
+				idx = i
+				break
+			end
+		end
+	end
+	local options = {}
+	for i, label in ipairs(labels) do
+		if i ~= 7 or idx == 7 then
+			options[#options + 1] = { index = i, label = label }
+		end
+	end
+	return {
+		kind = "shadows",
+		label = fgettext("Quality preset"),
+		comment = fgettext("(The game will need to enable shadows as well)"),
+		selectedIndex = idx,
+		options = options,
+	}
+end
+
+local function phone_settings_item_from_name(name)
+	local setting = get_setting_info(name)
+	assert(setting, "Unknown setting: " .. name)
+	local item = {
+		kind = setting.type,
+		name = setting.name,
+		label = phone_settings_show_label(setting),
+		comment = setting.comment and fgettext(setting.comment) or "",
+		resettable = core.settings:has(setting.name),
+		defaultText = phone_settings_default_text(setting),
+	}
+	if setting.type == "bool" then
+		item.value = core.settings:get_bool(setting.name, core.is_yes(setting.default))
+	elseif setting.type == "enum" then
+		local labels = setting.option_labels or {}
+		local current = core.settings:get(setting.name) or setting.default
+		item.options = {}
+		item.selectedIndex = 0
+		for i, option in ipairs(setting.values) do
+			item.options[i] = {
+				value = option,
+				label = labels[option] and fgettext(labels[option]) or option,
+			}
+			if option == current then
+				item.selectedIndex = i
+			end
+		end
+	elseif setting.type == "flags" then
+		item.flags = {}
+		local checkboxes = {}
+		for _, flag_name in ipairs(setting.possible) do
+			checkboxes[flag_name] = false
+		end
+		local function apply_flags(flag_string)
+			for _, fname in ipairs(flag_string:split(",")) do
+				local trimmed = fname:trim()
+				if trimmed:sub(1, 2) == "no" then
+					checkboxes[trimmed:sub(3)] = false
+				else
+					checkboxes[trimmed] = true
+				end
+			end
+		end
+		apply_flags(setting.default or "")
+		local value = core.settings:get(setting.name)
+		if value then
+			apply_flags(value)
+		end
+		for _, flag_name in ipairs(setting.possible) do
+			item.flags[#item.flags + 1] = {
+				name = flag_name,
+				label = flag_name,
+				value = checkboxes[flag_name] == true,
+			}
+		end
+	elseif setting.type == "key" then
+		item.kind = "readonly"
+		local keys = core.settings:get(setting.name) or setting.default or ""
+		item.value = keys ~= "" and core.get_key_description(keys) or fgettext_ne("Not bound")
+	elseif setting.type == "v3f" then
+		local value = vector.from_string(core.settings:get(setting.name) or setting.default)
+		item.x = value.x
+		item.y = value.y
+		item.z = value.z
+	elseif setting.type == "noise_params" then
+		item.kind = "readonly"
+		item.value = fgettext("Use desktop settings dialog to edit noise parameters.")
+	else
+		item.value = core.settings:get(setting.name) or setting.default or ""
+		if setting.min then
+			item.min = setting.min
+		end
+		if setting.max then
+			item.max = setting.max
+		end
+		if setting.type == "path" or setting.type == "filepath" then
+			item.kind = "string"
+		end
+	end
+	return item
+end
+
+local function phone_settings_build_items(page)
+	local items = {}
+	local settings_off = {}
+	local last_heading
+	for _, content in ipairs(page.content) do
+		if content == false then --luacheck: ignore
+			-- skip
+		elseif content.heading then
+			last_heading = content
+		else
+			local req_name, requires, context
+			local setting
+			if type(content) == "string" then
+				setting = get_setting_info(content)
+				assert(setting, "Unknown setting: " .. content)
+				req_name = setting.name
+				requires = setting.requires
+				context = setting.context
+			elseif content.get_formspec then
+				req_name = content.query_text or content.id
+				requires = content.requires
+				context = content.context
+			else
+				error("Unknown content in page: " .. dump(content))
+			end
+
+			if check_requirements(req_name, requires, context) then
+				if last_heading then
+					items[#items + 1] = {
+						kind = "heading",
+						text = fgettext(last_heading.heading),
+					}
+					last_heading = nil
+				end
+				if type(content) == "string" then
+					items[#items + 1] = phone_settings_item_from_name(content)
+				elseif content.query_text == "Touchscreen layout" then
+					items[#items + 1] = {
+						kind = "action",
+						action = "touch_layout",
+						label = fgettext("Touchscreen layout"),
+					}
+				elseif content.query_text == "Shadows" then
+					local shadow_item = phone_settings_shadow_item()
+					if shadow_item.selectedIndex ~= 1 then
+						items[#items + 1] = shadow_item
+					end
+				elseif content.query_text then
+					items[#items + 1] = {
+						kind = "note",
+						text = fgettext(content.query_text),
+					}
+				end
+			elseif setting then
+				settings_off[#settings_off + 1] = setting
+			end
+		end
+	end
+
+	if #settings_off > 0 then
+		items[#items + 1] = {
+			kind = "heading",
+			text = fgettext_ne("Unavailable"),
+		}
+		items[#items + 1] = {
+			kind = "note",
+			text = fgettext_ne("These settings are unavailable due to your platform, hardware or in combination with the current settings."),
+		}
+		for _, setting in ipairs(settings_off) do
+			items[#items + 1] = {
+				kind = "readonly",
+				name = setting.name,
+				label = phone_settings_show_label(setting),
+				value = setting.name,
+			}
+		end
+	end
+
+	return items
+end
+
+function phone_settings_build_state(page_id, query)
+	load()
+	if query ~= nil then
+		phone_settings_query = query
+	end
+	local suggested = update_filtered_pages(phone_settings_query)
+	if page_id and page_id ~= "" then
+		phone_settings_page_id = page_id
+	elseif not phone_settings_page_id or not filtered_page_by_id[phone_settings_page_id] then
+		phone_settings_page_id = suggested or "accessibility"
+	end
+
+	local pages = {}
+	local last_section = nil
+	for _, other_page in ipairs(filtered_pages) do
+		if other_page.section and other_page.section ~= last_section then
+			last_section = other_page.section
+		end
+		pages[#pages + 1] = {
+			id = other_page.id,
+			title = fgettext(other_page.title),
+			section = other_page.section and fgettext(other_page.section) or "",
+		}
+	end
+
+	local page = filtered_page_by_id[phone_settings_page_id]
+	return {
+		pages = pages,
+		selectedPageId = phone_settings_page_id,
+		query = phone_settings_query,
+		showTechnicalNames = core.settings:get_bool("show_technical_names"),
+		showAdvanced = core.settings:get_bool("show_advanced"),
+		items = page and phone_settings_build_items(page) or {},
+	}
+end
+
+function phone_settings_apply_shadow(index)
+	index = tonumber(index) or 1
+	if shadows_component and shadows_component.on_submit then
+		shadows_component:on_submit({ dd_shadows = tostring(index) })
+		write_settings_early()
+	end
+end
+
+function phone_settings_reset(name)
+	local setting = get_setting_info(name)
+	if setting then
+		core.settings:remove(name)
+		write_settings_early()
+		if name == "touch_controls" then
+			update_filtered_pages(phone_settings_query)
+		end
+	end
+end
+
+function phone_settings_set_bool(name, value)
+	local setting = get_setting_info(name)
+	if setting and setting.type == "bool" then
+		core.settings:set_bool(name, value == true)
+		write_settings_early()
+		if name == "touch_controls" then
+			update_filtered_pages(phone_settings_query)
+		end
+	end
+end
+
+function phone_settings_set_enum(name, index)
+	local setting = get_setting_info(name)
+	index = tonumber(index) or 0
+	if setting and setting.type == "enum" and setting.values[index] then
+		core.settings:set(name, setting.values[index])
+		write_settings_early()
+		if name == "touch_controls" then
+			update_filtered_pages(phone_settings_query)
+		end
+	end
+end
+
+function phone_settings_set_string(name, value)
+	local setting = get_setting_info(name)
+	if not setting then
+		return
+	end
+	if setting.type == "string" or setting.type == "path" or setting.type == "filepath" then
+		core.settings:set(name, tostring(value or ""))
+		write_settings_early()
+	elseif setting.type == "int" then
+		local n = tonumber(value)
+		if n then
+			n = math.floor(n)
+			if setting.min then
+				n = math.max(n, setting.min)
+			end
+			if setting.max then
+				n = math.min(n, setting.max)
+			end
+			core.settings:set(name, tostring(n))
+			write_settings_early()
+		end
+	elseif setting.type == "float" then
+		local n = tonumber(value)
+		if n then
+			if setting.min then
+				n = math.max(n, setting.min)
+			end
+			if setting.max then
+				n = math.min(n, setting.max)
+			end
+			local str = tostring(n)
+			if str:match("^[+-]?%d+$") then
+				str = str .. ".0"
+			end
+			core.settings:set(name, str)
+			write_settings_early()
+		end
+	elseif setting.type == "v3f" then
+		local x = tonumber(value and value.x)
+		local y = tonumber(value and value.y)
+		local z = tonumber(value and value.z)
+		if x and y and z then
+			core.settings:set(name, vector.new(x, y, z):to_string())
+			write_settings_early()
+		end
+	end
+end
+
+function phone_settings_set_flag(name, flag_name, enabled)
+	local setting = get_setting_info(name)
+	if not setting or setting.type ~= "flags" then
+		return
+	end
+	local checkboxes = {}
+	for _, possible in ipairs(setting.possible) do
+		checkboxes[possible] = false
+	end
+	local function apply_flags(flag_string)
+		for _, fname in ipairs(flag_string:split(",")) do
+			local trimmed = fname:trim()
+			if trimmed:sub(1, 2) == "no" then
+				checkboxes[trimmed:sub(3)] = false
+			else
+				checkboxes[trimmed] = true
+			end
+		end
+	end
+	apply_flags(setting.default or "")
+	local value = core.settings:get(setting.name)
+	if value then
+		apply_flags(value)
+	end
+	if checkboxes[flag_name] ~= nil then
+		checkboxes[flag_name] = enabled == true
+	end
+	local values = {}
+	for _, possible in ipairs(setting.possible) do
+		if checkboxes[possible] then
+			table.insert(values, possible)
+		else
+			table.insert(values, "no" .. possible)
+		end
+	end
+	core.settings:set(name, table.concat(values, ","))
+	write_settings_early()
+end
+
+function phone_settings_set_ui_bool(name, value)
+	if name == "show_technical_names" then
+		core.settings:set_bool("show_technical_names", value == true)
+		write_settings_early()
+	elseif name == "show_advanced" then
+		core.settings:set_bool("show_advanced", value == true)
+		write_settings_early()
+		update_filtered_pages(phone_settings_query)
+	end
+end
+
+function phone_settings_touch_layout()
+	core.show_touchscreen_layout()
+end
+
+function phone_settings_persist()
+	core.settings:write()
+end
+
+
 if INIT == "mainmenu" then
 	function create_settings_dlg(page_id)
 		load()

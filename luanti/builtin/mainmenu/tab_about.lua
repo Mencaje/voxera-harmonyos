@@ -6,6 +6,8 @@
 local ABOUT_LOGO_FILE = "voxera_about_source.png"
 local ABOUT_LOGO_W = 2.5
 local ABOUT_LOGO_H = 2.5
+local VOXERA_LEGAL_URL = "https://voxera.mencaje.com/"
+local MENCAJE_HOMEPAGE_URL = "https://mencaje.com/"
 
 local function resolve_about_logo_path()
 	local path = defaulttexturedir .. ABOUT_LOGO_FILE
@@ -56,7 +58,7 @@ end
 
 local function get_about_version_label()
 	if PLATFORM == "HarmonyOS" then
-		return "Voxera-HarmonyOS 1.0.0"
+		return "Voxera-HarmonyOS 2.0.0"
 	end
 	local version = core.get_version()
 	return version.project .. " " .. version.string
@@ -65,7 +67,7 @@ end
 local function get_about_homepage_button()
 	if PLATFORM == "HarmonyOS" then
 		return "button_url[1.5,4.1;2.5,0.8;homepage;" ..
-			core.formspec_escape("萌创匠盒") .. ";https://mencaje.com/]"
+			core.formspec_escape("萌创匠盒") .. ";" .. MENCAJE_HOMEPAGE_URL .. "]"
 	end
 	return "button_url[1.5,4.1;2.5,0.8;homepage;luanti.org;https://www.luanti.org/]"
 end
@@ -76,49 +78,114 @@ local function hypertext_label_value(label, value)
 		"<gray>" .. core.hypertext_escape(value) .. "</gray>\n"
 end
 
--- The whole app is a port/derivative of this engine (LGPL — must attribute + offer source).
+-- Map hypertext action names -> URLs (HarmonyOS: Lua fallback if C++ url handler misses).
+local about_url_actions = {}
+local about_url_action_seq = 0
+
+-- Yellow label + clickable URL. Luanti hypertext requires <action name="..."> (name is mandatory).
+local function hypertext_label_link(label, url, display_text)
+	local shown = display_text or url
+	about_url_action_seq = about_url_action_seq + 1
+	local action_name = "voxera_url_" .. about_url_action_seq
+	about_url_actions[action_name] = url
+	return "<heading>" .. core.hypertext_escape(label) .. "</heading>" ..
+		"<action name=\"" .. action_name .. "\" url=\"" .. url .. "\">" ..
+		"<style color=\"#aaaaaa\" hovercolor=\"#66ccff\">" ..
+		core.hypertext_escape(shown) .. "</style></action>\n"
+end
+
+local function handle_about_hypertext_click(fields)
+	if not fields.credits or fields.credits:sub(1, 7) ~= "action:" then
+		return false
+	end
+	local action_name = fields.credits:sub(8)
+	local url = about_url_actions[action_name]
+	if url then
+		core.open_url(url)
+		return true
+	end
+	return false
+end
+
+-- Luanti LICENSE.txt §「License of Luanti source code」:
+-- GNU Lesser General Public License, either version 2.1 or (at your option) any later version.
+-- Every engine source file declares: SPDX-License-Identifier: LGPL-2.1-or-later
 local VOXERA_BASE_ENGINE = {
 	name = "Luanti",
 	desc = "开源体素游戏引擎（本应用在其源码基础上移植至 HarmonyOS）",
 	site = "https://www.luanti.org/",
 	source = "https://github.com/luanti-org/luanti/",
-	license_tag = "LGPL-2.1-or-later",
-	license_cn = "GNU 宽通用公共许可证（LGPL）第 2.1 版或更高版本",
+	license_spdx = "LGPL-2.1-or-later",
+	license_name = "GNU Lesser General Public License",
+	license_name_cn = "GNU 宽通用公共许可证",
+	license_version = "v2.1 or later",
+	license_version_cn = "第 2.1 版或更新版本",
 	license_url = "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html",
+	-- Luanti LICENSE.txt §「License of Luanti textures and sounds」 (bundled default assets)
+	media_license_spdx = "CC-BY-SA-3.0",
+	media_license_cn = "默认贴图与音效：知识共享 署名-相同方式共享 3.0",
+	media_license_url = "https://creativecommons.org/licenses/by-sa/3.0/",
 }
 
 -- Bundled with the engine binary; not separate “games” or game content.
 local VOXERA_RUNTIME_LIBS = {
-	{ name = "SDL2", site = "https://www.libsdl.org/", license = "zlib License" },
-	{ name = "Lua", site = "https://www.lua.org/", license = "MIT" },
+	{
+		name = "SDL2",
+		site = "https://www.libsdl.org/",
+		license_spdx = "Zlib",
+		license_name_cn = "zlib 许可证",
+		license_url = "https://www.zlib.net/zlib_license.html",
+	},
+	{
+		name = "Lua",
+		site = "https://www.lua.org/",
+		license_spdx = "MIT",
+		license_name_cn = "MIT 许可证",
+		license_url = "https://www.lua.org/license.html",
+	},
 }
+
+local function format_license_line(dep)
+	if not dep.license_spdx then
+		return dep.license_cn or dep.license or dep.license_tag or ""
+	end
+	local name = dep.license_name_cn or dep.license_name or dep.license_spdx
+	local ver = dep.license_version_cn or dep.license_version
+	local line = ver and ver ~= "" and (name .. " " .. ver) or name
+	return line .. "（SPDX：" .. dep.license_spdx .. "）"
+end
 
 local function append_oss_block(parts, dep, with_source)
 	table.insert(parts, hypertext_label_value("开源名称：", dep.name))
 	if dep.desc then
 		table.insert(parts, "<gray>" .. core.hypertext_escape(dep.desc) .. "</gray>\n")
 	end
-	table.insert(parts, hypertext_label_value("开源官网：", dep.site))
+	table.insert(parts, hypertext_label_link("开源官网：", dep.site))
 	if with_source and dep.source then
-		table.insert(parts, hypertext_label_value("开源源码：", dep.source))
+		table.insert(parts, hypertext_label_link("开源源码：", dep.source))
 	end
-	local license_line = dep.license_cn or dep.license or dep.license_tag
-	if dep.license_tag and dep.license_cn then
-		license_line = dep.license_cn .. "（" .. dep.license_tag .. "）"
-	end
-	table.insert(parts, hypertext_label_value("开源协议：", license_line))
+	table.insert(parts, hypertext_label_value("开源协议：", format_license_line(dep)))
 	if dep.license_url then
-		table.insert(parts, hypertext_label_value("协议全文：", dep.license_url))
+		table.insert(parts, hypertext_label_link("协议全文：", dep.license_url))
+	end
+	if dep.media_license_cn then
+		table.insert(parts, hypertext_label_value("随附素材协议：",
+			dep.media_license_cn .. "（SPDX：" .. dep.media_license_spdx .. "）"))
+		if dep.media_license_url then
+			table.insert(parts, hypertext_label_link("素材协议全文：", dep.media_license_url))
+		end
 	end
 end
 
 local function build_voxera_about_hypertext()
+	about_url_actions = {}
+	about_url_action_seq = 0
 	local parts = {
 		"<tag name=heading color=#ff0>",
 		"<tag name=gray color=#aaa>",
 		hypertext_label_value("开发者：", "萌创匠盒"),
-		hypertext_label_value("官网：", "mencaje.com"),
-		hypertext_label_value("本项目开源地址：",
+		hypertext_label_link("官网：", MENCAJE_HOMEPAGE_URL, "mencaje.com"),
+		hypertext_label_link("本项目开源地址：",
 			"https://github.com/Mencaje/voxera-harmonyos"),
 		"\n",
 		"<heading>", core.hypertext_escape("本应用所基于的主要开源项目（引擎）："), "</heading>\n",
@@ -133,6 +200,9 @@ local function build_voxera_about_hypertext()
 			table.insert(parts, "\n")
 		end
 	end
+	table.insert(parts, "\n")
+	table.insert(parts, hypertext_label_link("隐私政策：", VOXERA_LEGAL_URL))
+	table.insert(parts, hypertext_label_link("用户协议：", VOXERA_LEGAL_URL))
 	return table.concat(parts)
 end
 
@@ -213,6 +283,10 @@ return {
 	end,
 
 	cbf_button_handler = function(this, fields, name, tabdata)
+		if handle_about_hypertext_click(fields) then
+			return true
+		end
+
 		if fields.share_debug then
 			local path = core.get_user_path() .. DIR_DELIM .. "debug.txt"
 			core.share_file(path)

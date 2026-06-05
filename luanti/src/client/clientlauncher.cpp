@@ -150,8 +150,9 @@ bool ClientLauncher::run(GameStartData &start_data, const Settings &cmd_args)
 		return false;
 	}
 
-	// Create the menu clouds
-	// This is only global so it can be used by RenderingEngine::draw_load_screen().
+	// Menu clouds: extra scene manager + shaders. Skip on OHOS (often no discrete GPU;
+	// cloud/clouds SIGABRT when opening formspec dialogs on remote cloud devices).
+#if !defined(__OHOS__)
 	assert(!g_menucloudsmgr && !g_menuclouds);
 	std::unique_ptr<IWritableShaderSource> ssrc;
 	try {
@@ -171,18 +172,14 @@ bool ClientLauncher::run(GameStartData &start_data, const Settings &cmd_args)
 		camera->setAspectRatio(1.0f);
 		camera->setFOV(100.f * core::PI / 180.0f);
 		g_menucloudsmgr->setActiveCamera(camera);
-#ifdef __OHOS__
-		porting_ohosEngineStatusSet("init_engine: menu clouds ok");
-#endif
 	} catch (BaseException &e) {
 		errorstream << e.what() << std::endl;
-#ifdef __OHOS__
-		extern void porting_ohosEngineStatusSet(const char *);
-		porting_ohosEngineStatusSet(e.what());
-#endif
 		RenderingEngine::showErrorMessageBox(e.what());
 		return false;
 	}
+#else
+	porting_ohosEngineStatusSet("init_engine: menu clouds skipped (OHOS)");
+#endif
 
 	/*
 		GUI stuff
@@ -412,7 +409,13 @@ void ClientLauncher::config_guienv()
 	float density = rangelim(g_settings->getFloat("gui_scaling"), 0.5f, 20) *
 		RenderingEngine::getDisplayDensity();
 	skin->setScale(density);
+#ifdef __OHOS__
+	/* Tablet touch: enlarge checkbox square only (not whole formspec / dialog). */
+	const float cb_factor = (porting::ohosGetDeviceFormFactor() == "tablet") ? 30.0f : 17.0f;
+	skin->setSize(gui::EGDS_CHECK_BOX_WIDTH, (s32)(cb_factor * density));
+#else
 	skin->setSize(gui::EGDS_CHECK_BOX_WIDTH, (s32)(17.0f * density));
+#endif
 	skin->setSize(gui::EGDS_SCROLLBAR_SIZE, (s32)(21.0f * density));
 	skin->setSize(gui::EGDS_WINDOW_BUTTON_WIDTH, (s32)(15.0f * density));
 
@@ -627,8 +630,11 @@ void ClientLauncher::main_menu(MainMenuData *menudata)
 	}
 
 #ifdef __OHOS__
-	extern void porting_ohosEngineStatusSet(const char *);
-	porting_ohosEngineStatusSet("main_menu: enter");
+	porting::ohosEngineStatusSet("main_menu: enter");
+	if (porting::ohosGetDeviceFormFactor() == "phone") {
+		/* Re-hide Lua maintab and refresh native local-game state after disconnect. */
+		porting::ohosCompleteFilePick("phone_native_local", "{\"op\":\"refresh\"}");
+	}
 #endif
 	/* show main menu */
 	GUIEngine mymenu(&input->joystick, guiroot, m_rendering_engine, &g_menumgr, menudata, *kill);

@@ -6,8 +6,12 @@
 #endif
 
 #include "porting_ohos.h"
+#include "ohos_touch_dispatch.h"
 #include <ace/xcomponent/native_interface_xcomponent.h>
 #include <hilog/log.h>
+#include <csignal>
+#include <cstdio>
+#include <exception>
 #include "core/ohos/SDL_ohos_voxerabridge.h"
 #include "video/ohos/SDL_ohosmouse.h"
 #include "porting.h"
@@ -43,17 +47,26 @@ enum class OhosUiRequestKind : int {
 	Fullscreen = 4,
 	OpenLocalPath = 5,
 	CopyDir = 6,
+	Vibrate = 7,
+	TextInput = 8,
 };
 
 namespace {
 std::mutex g_ohosUiMutex;
 OhosUiRequestKind g_ohosUiPending = OhosUiRequestKind::None;
 std::string g_ohosUiPayload;
-std::string g_ohosPickFormname;
-std::string g_ohosPickPath;
-bool g_ohosPickReady = false;
-bool g_ohosPickAccepted = false;
+porting::OhosDialogState g_ohosInputDialogState = porting::OHOS_DIALOG_CANCELED;
+std::string g_ohosInputDialogText;
+struct OhosPickResult {
+	std::string formname;
+	std::string path;
+	bool accepted = false;
+};
+
+std::deque<OhosPickResult> g_pickQueue;
+constexpr size_t OHOS_MAX_PICK_QUEUE = 128;
 std::string g_ohosZipDropFormname;
+std::string g_deviceFormFactor;
 
 std::mutex g_ohosCopyMutex;
 std::condition_variable g_ohosCopyCv;
@@ -74,6 +87,10 @@ constexpr size_t OHOS_KEY_DRAIN_BURST_THRESHOLD = 32;
 std::mutex g_heldScanMutex;
 std::array<bool, SDL_NUM_SCANCODES> g_heldScancodes{};
 
+std::mutex g_phoneGameActionMutex;
+std::deque<int> g_phoneGameActionQueue;
+constexpr size_t OHOS_MAX_PHONE_GAME_ACTIONS = 32;
+
 struct OhosPendingMouseMotion {
 	int dx;
 	int dy;
@@ -84,11 +101,34 @@ std::deque<OhosPendingMouseMotion> g_pendingMouse;
 constexpr size_t OHOS_MAX_PENDING_MOUSE = 256;
 constexpr size_t OHOS_MAX_MOUSE_DRAIN_PER_FRAME = 128;
 
+struct OhosPendingTouch {
+	float x;
+	float y;
+	int action;
+	int fingerId;
+};
+
+std::mutex g_ohosTouchMutex;
+std::deque<OhosPendingTouch> g_pendingTouch;
+constexpr size_t OHOS_MAX_PENDING_TOUCH = 256;
+constexpr size_t OHOS_MAX_TOUCH_DRAIN_PER_FRAME = 64;
+
+std::mutex g_touchGateMutex;
+bool g_touchGateDown = false;
+std::chrono::steady_clock::time_point g_touchGateLastDown{};
+
+std::atomic<bool> g_ohosReleasePointerPending{false};
+
 std::atomic<bool> g_relativeMouseUiDirty{false};
 std::atomic<bool> g_relativeMouseUiWant{false};
 std::atomic<bool> g_fullscreenUiDirty{false};
 std::atomic<bool> g_fullscreenUiWant{false};
 std::atomic<bool> g_ohosFullscreenActive{false};
+std::atomic<bool> g_ohosGameMenuActive{false};
+std::atomic<bool> g_ohosNativePauseActive{false};
+std::atomic<bool> g_ohosPlayerInventoryOpen{false};
+/** Sticky latch: status string is overwritten by load progress; UI polls must not miss in_game. */
+std::atomic<bool> g_ohosInGameWorld{false};
 
 static void ohosOnRelativeMouseModeChanged(int enabled)
 {
@@ -276,6 +316,7 @@ extern "C" int SDL_Main(int /*argc*/, char ** /*argv*/)
 {
 	SDL_SetMainReady();
 	Thread::setName("LuantiMain");
+	porting::ohosInstallCrashHandler();
 	porting::ohosRefreshPaths();
 	porting::ohosEngineStatusSet("SDL_Main: enter");
 
@@ -295,6 +336,66 @@ extern "C" int SDL_Main(int /*argc*/, char ** /*argv*/)
 
 namespace porting {
 
+namespace {
+
+void ohos_signal_crash_handler(int sig)
+{
+	const char *name = "UNKNOWN";
+	switch (sig) {
+	case SIGABRT: name = "SIGABRT"; break;
+	case SIGSEGV: name = "SIGSEGV"; break;
+	case SIGBUS: name = "SIGBUS"; break;
+	case SIGFPE: name = "SIGFPE"; break;
+	case SIGILL: name = "SIGILL"; break;
+	default: break;
+	}
+	char buf[256];
+	snprintf(buf, sizeof(buf), "native crash: %s (%d)", name, sig);
+	OH_LOG_Print(LOG_APP, LOG_FATAL, 0, "VoxeraCrash", "%{public}s", buf);
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
+static void ohos_terminate_handler()
+{
+	const char *msg = "uncaught C++ exception (std::terminate)";
+	try {
+		throw;
+	} catch (const std::exception &e) {
+		char buf[384];
+		snprintf(buf, sizeof(buf), "terminate: %s", e.what());
+		OH_LOG_Print(LOG_APP, LOG_FATAL, 0, "VoxeraCrash", "%{public}s", buf);
+		std::abort();
+	} catch (...) {
+		OH_LOG_Print(LOG_APP, LOG_FATAL, 0, "VoxeraCrash", "%{public}s", msg);
+		std::abort();
+	}
+}
+
+} // namespace
+
+void ohosInstallCrashHandler()
+{
+	std::set_terminate(ohos_terminate_handler);
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = ohos_signal_crash_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESETHAND;
+	const int signals[] = {SIGABRT, SIGSEGV, SIGBUS, SIGFPE, SIGILL};
+	for (int s : signals) {
+		sigaction(s, &sa, nullptr);
+	}
+	OH_LOG_Print(LOG_APP, LOG_INFO, 0, "VoxeraCrash", "crash handler installed");
+}
+
+void ohosLogFatal(const char *msg)
+{
+	if (!msg || !msg[0])
+		return;
+	OH_LOG_Print(LOG_APP, LOG_FATAL, 0, "VoxeraCrash", "%{public}s", msg);
+}
+
 void ohosSetDataPaths(const std::string &shareDir, const std::string &cacheDir,
 		const std::string &userDir)
 {
@@ -305,6 +406,19 @@ void ohosSetDataPaths(const std::string &shareDir, const std::string &cacheDir,
 	if (!ohosRefreshPaths()) {
 		ohosEngineStatusSet("资源目录未设置（luanti_share）");
 	}
+}
+
+void ohosSetDeviceFormFactor(const std::string &deviceType)
+{
+	g_deviceFormFactor = deviceType;
+	/* ArkUI reports "default" on some phones; engine/Lua expect "phone". */
+	if (g_deviceFormFactor == "default")
+		g_deviceFormFactor = "phone";
+}
+
+const std::string &ohosGetDeviceFormFactor()
+{
+	return g_deviceFormFactor;
 }
 
 void ohosSetPublicUserDir(const std::string &path)
@@ -322,10 +436,23 @@ bool ohosDataPathsReady()
 	return g_pathsReady.load();
 }
 
+static void ohosUpdateInGameWorldLatch(const char *status)
+{
+	if (!status || !status[0])
+		return;
+	if (strncmp(status, "in_game:", 8) == 0) {
+		g_ohosInGameWorld.store(true);
+	} else if (strncmp(status, "main_menu:", 10) == 0 ||
+			strcmp(status, "phone_local:state") == 0) {
+		g_ohosInGameWorld.store(false);
+	}
+}
+
 void ohosEngineStatusSet(const char *status)
 {
 	if (status)
 		g_engineStatus = status;
+	ohosUpdateInGameWorldLatch(status);
 	OH_LOG_Print(LOG_APP, LOG_INFO, 0, "VoxeraLuanti", "%{public}s", status ? status : "");
 }
 
@@ -386,16 +513,27 @@ void ohosApplyClientDefaults()
 	g_settings->setBool("enable_water_reflections", false);
 
 	g_settings->set("language", "zh_CN");
-	g_settings->setFloat("gui_scaling", 1.12f);
+	/* Cloud devices: large gui_scaling + full-res menu textures can OOM / SIGABRT. */
+	g_settings->setFloat("gui_scaling", 1.0f);
+	g_settings->setU16("screen_w", 1280);
+	g_settings->setU16("screen_h", 720);
 	/* Hotbar + hearts/hunger cluster; independent of menu formspec scale. */
-	g_settings->setFloat("hud_scaling", 1.12f);
+	g_settings->setFloat("hud_scaling",
+			g_deviceFormFactor == "tablet" ? 1.28f : 1.48f);
 	g_settings->setFloat("display_density_factor", 1.0f);
 	/* Font shadow smears on GLES2 menu (white flickering bars in formspec). */
 	g_settings->set("font_shadow", "0");
 	g_settings->setBool("gui_scaling_filter", false);
-	/* 2in1 / PC emulator: keyboard + mouse, not phone touch overlay. */
-	g_settings->setBool("touch_gui", false);
+	/* Phone: touch menu path. Tablet/2in1: same as PC (keyboard/mouse or touch overlay). */
+	g_settings->setBool("touch_gui", g_deviceFormFactor == "phone");
+	/* Phone in-game uses direct swipe/long-press/tap mapping (not on-screen TouchControls). */
+	if (g_deviceFormFactor == "phone")
+		g_settings->set("touch_controls", "false");
 	g_settings->setBool("show_debug", false);
+	/* Second scene manager for menu clouds crashes SIGABRT on CPU/GLES cloud devices. */
+	g_settings->setBool("menu_clouds", false);
+	/* Log to HiLog only; writing debug.txt under files/luanti_user is sandbox-filtered. */
+	g_settings->set("debug_log_level", "");
 	/* XComponent focus is unreliable; avoid opening pause menu every frame. */
 	g_settings->setBool("pause_on_lost_focus", false);
 
@@ -554,6 +692,146 @@ void ohosRegisterXComponentInput(OH_NativeXComponent *component)
 	if (!OHOS_VoxeraRegisterInputCallbacks(component)) {
 		warningstream << "OHOS_VoxeraRegisterInputCallbacks failed" << std::endl;
 	}
+}
+
+void ohosDispatchTouchEvent(OH_NativeXComponent *component, void *window)
+{
+	OH_NativeXComponent_TouchEvent touchEvent;
+	if (!component || !window) {
+		return;
+	}
+	if (OH_NativeXComponent_GetTouchEvent(component, window, &touchEvent) != 0) {
+		return;
+	}
+	ohosInjectTouch(touchEvent.x, touchEvent.y, touchEvent.type, touchEvent.id);
+}
+
+static bool ohos_use_phone_game_touch()
+{
+	if (g_deviceFormFactor != "phone")
+		return false;
+	if (!g_settings || !g_settings->getBool("touch_gui"))
+		return false;
+	if (!g_ohosInGameWorld.load())
+		return false;
+	if (g_ohosGameMenuActive.load())
+		return false;
+	return true;
+}
+
+static bool ohos_use_sdl_touch_path()
+{
+	if (ohos_use_phone_game_touch())
+		return false;
+	if (g_deviceFormFactor == "phone" && g_ohosGameMenuActive.load())
+		return false;
+	if (!g_settings || !g_settings->getBool("touch_gui"))
+		return false;
+	return g_ohosInGameWorld.load();
+}
+
+void ohosInjectClick(float x, float y)
+{
+	std::lock_guard<std::mutex> lock(g_ohosTouchMutex);
+	while (g_pendingTouch.size() + 2 > OHOS_MAX_PENDING_TOUCH) {
+		g_pendingTouch.pop_front();
+	}
+	g_pendingTouch.push_back({x, y, OHOS_POINTER_DOWN, 0});
+	g_pendingTouch.push_back({x, y, OHOS_POINTER_UP, 0});
+	{
+		std::lock_guard<std::mutex> gate(g_touchGateMutex);
+		g_touchGateDown = false;
+	}
+}
+
+void ohosInjectTouch(float x, float y, int action, int fingerId)
+{
+	if (action == OHOS_POINTER_MOVE) {
+		std::lock_guard<std::mutex> lock(g_ohosTouchMutex);
+		while (g_pendingTouch.size() >= OHOS_MAX_PENDING_TOUCH) {
+			g_pendingTouch.pop_front();
+		}
+		g_pendingTouch.push_back({x, y, action, fingerId});
+		return;
+	}
+
+	const auto now = std::chrono::steady_clock::now();
+	if (action == OHOS_POINTER_DOWN) {
+		std::lock_guard<std::mutex> lock(g_touchGateMutex);
+		const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+				now - g_touchGateLastDown).count();
+		if (g_touchGateDown && ms < 120) {
+			return;
+		}
+		g_touchGateDown = true;
+		g_touchGateLastDown = now;
+	} else {
+		std::lock_guard<std::mutex> lock(g_touchGateMutex);
+		g_touchGateDown = false;
+	}
+
+	std::lock_guard<std::mutex> lock(g_ohosTouchMutex);
+	while (g_pendingTouch.size() >= OHOS_MAX_PENDING_TOUCH) {
+		g_pendingTouch.pop_front();
+	}
+	g_pendingTouch.push_back({x, y, action, fingerId});
+}
+
+void ohosPollPendingTouch()
+{
+	if (g_ohosReleasePointerPending.exchange(false)) {
+		ohos_release_stale_pointer();
+	}
+
+	std::deque<OhosPendingTouch> batch;
+	{
+		std::lock_guard<std::mutex> lock(g_ohosTouchMutex);
+		const size_t n = std::min(g_pendingTouch.size(), OHOS_MAX_TOUCH_DRAIN_PER_FRAME);
+		batch.resize(n);
+		for (size_t i = 0; i < n; ++i) {
+			batch[i] = g_pendingTouch.front();
+			g_pendingTouch.pop_front();
+		}
+	}
+	OH_NativeXComponent *component = nullptr;
+	void *nativeWindow = nullptr;
+	{
+		std::lock_guard<std::mutex> lock(g_windowMutex);
+		component = g_nativeXComponent;
+		nativeWindow = g_nativeWindow;
+	}
+	if (!component) {
+		return;
+	}
+	const bool sdl_touch = ohos_use_sdl_touch_path();
+	const bool phone_touch = ohos_use_phone_game_touch();
+	for (const auto &t : batch) {
+		if (phone_touch) {
+			ohos_deliver_phone_game_touch(component, nativeWindow,
+					t.x, t.y, t.action, t.fingerId);
+		} else if (sdl_touch) {
+			ohos_deliver_sdl_touch_input(component, nativeWindow,
+					t.x, t.y, t.action, t.fingerId);
+		} else {
+			ohos_deliver_pointer_input(component, nativeWindow,
+					t.x, t.y, t.action, t.fingerId);
+		}
+	}
+	if (phone_touch)
+		ohos_phone_touch_tick(component);
+}
+
+void ohosReleaseStalePointer()
+{
+	{
+		std::lock_guard<std::mutex> lock(g_ohosTouchMutex);
+		g_pendingTouch.clear();
+	}
+	{
+		std::lock_guard<std::mutex> lock(g_touchGateMutex);
+		g_touchGateDown = false;
+	}
+	g_ohosReleasePointerPending.store(true);
 }
 
 void ohosRequestStart(OH_NativeXComponent *component, void *nativeWindow)
@@ -715,9 +993,86 @@ void ohosNotifyFullscreen(bool enabled)
 			"ohosNotifyFullscreen enabled=%{public}d", enabled ? 1 : 0);
 }
 
+void ohosRequestVibrate(int durationMs)
+{
+	if (g_deviceFormFactor != "phone" || durationMs <= 0)
+		return;
+	std::lock_guard<std::mutex> lock(g_ohosUiMutex);
+	g_ohosUiPayload = std::to_string(durationMs);
+	g_ohosUiPending = OhosUiRequestKind::Vibrate;
+}
+
+void ohosSetGameMenuActive(bool active)
+{
+	g_ohosGameMenuActive.store(active);
+}
+
+bool ohosIsGameMenuActive()
+{
+	return g_ohosGameMenuActive.load();
+}
+
+bool ohosIsInGameWorld()
+{
+	return g_ohosInGameWorld.load();
+}
+
+void ohosSetInGameWorld(bool active)
+{
+	g_ohosInGameWorld.store(active);
+}
+
+bool ohosGetNativePauseActive()
+{
+	return g_ohosNativePauseActive.load();
+}
+
+void ohosSetNativePauseActive(bool active)
+{
+	g_ohosNativePauseActive.store(active);
+}
+
+bool ohosIsPlayerInventoryOpen()
+{
+	return g_ohosPlayerInventoryOpen.load();
+}
+
+void ohosSetPlayerInventoryOpen(bool active)
+{
+	g_ohosPlayerInventoryOpen.store(active);
+}
+
 bool ohosIsFullscreen()
 {
 	return g_ohosFullscreenActive.load();
+}
+
+void ohosShowTextInputDialog(const std::string &hint, const std::string &current, int editType)
+{
+	std::lock_guard<std::mutex> lock(g_ohosUiMutex);
+	g_ohosInputDialogState = porting::OHOS_DIALOG_SHOWN;
+	g_ohosInputDialogText.clear();
+	g_ohosUiPayload = std::to_string(editType) + '\n' + hint + '\n' + current;
+	g_ohosUiPending = OhosUiRequestKind::TextInput;
+}
+
+OhosDialogState ohosGetInputDialogState()
+{
+	std::lock_guard<std::mutex> lock(g_ohosUiMutex);
+	return g_ohosInputDialogState;
+}
+
+std::string ohosGetInputDialogMessage()
+{
+	std::lock_guard<std::mutex> lock(g_ohosUiMutex);
+	return g_ohosInputDialogText;
+}
+
+void ohosCompleteTextInput(bool canceled, const std::string &text)
+{
+	std::lock_guard<std::mutex> lock(g_ohosUiMutex);
+	g_ohosInputDialogState = canceled ? porting::OHOS_DIALOG_CANCELED : porting::OHOS_DIALOG_INPUTTED;
+	g_ohosInputDialogText = text;
 }
 
 int ohosPollUiRequest(std::string &out)
@@ -743,18 +1098,44 @@ int ohosPollUiRequest(std::string &out)
 void ohosCompleteFilePick(const std::string &formname, const std::string &path)
 {
 	std::lock_guard<std::mutex> lock(g_ohosUiMutex);
-	g_ohosPickFormname = formname;
-	g_ohosPickPath = path;
-	g_ohosPickAccepted = !path.empty();
-	g_ohosPickReady = true;
+	if (g_pickQueue.size() >= OHOS_MAX_PICK_QUEUE) {
+		g_pickQueue.pop_front();
+	}
+	OhosPickResult pick;
+	pick.formname = formname;
+	pick.path = path;
+	pick.accepted = !path.empty();
+	g_pickQueue.push_back(std::move(pick));
 	OH_LOG_Print(LOG_APP, LOG_INFO, 0, "VoxeraLuanti",
-			"file pick %{public}s -> %{public}s",
-			formname.c_str(), path.empty() ? "(canceled)" : path.c_str());
+			"file pick %{public}s -> %{public}s (queued %{public}zu)",
+			formname.c_str(), path.empty() ? "(canceled)" : path.c_str(),
+			g_pickQueue.size());
 }
 
 void ohosInjectKeyEvent(int keycode, bool down)
 {
 	OHOS_QueueKeyEvent(keycode, down ? 1 : 0);
+}
+
+void ohosQueuePhoneGameAction(int action)
+{
+	if (action != OHOS_PHONE_GAME_INVENTORY && action != OHOS_PHONE_GAME_MINIMAP)
+		return;
+	std::lock_guard<std::mutex> lock(g_phoneGameActionMutex);
+	if (g_phoneGameActionQueue.size() >= OHOS_MAX_PHONE_GAME_ACTIONS)
+		g_phoneGameActionQueue.pop_front();
+	g_phoneGameActionQueue.push_back(action);
+}
+
+int ohosTakePhoneGameAction(int *out_action)
+{
+	std::lock_guard<std::mutex> lock(g_phoneGameActionMutex);
+	if (g_phoneGameActionQueue.empty())
+		return 0;
+	if (out_action)
+		*out_action = g_phoneGameActionQueue.front();
+	g_phoneGameActionQueue.pop_front();
+	return 1;
 }
 
 void ohosPollPendingKeys()
@@ -783,12 +1164,13 @@ bool ohosIsScancodePressed(unsigned scancode)
 bool ohosTakePickResult(std::string &formname, std::string &path, bool &accepted)
 {
 	std::lock_guard<std::mutex> lock(g_ohosUiMutex);
-	if (!g_ohosPickReady)
+	if (g_pickQueue.empty())
 		return false;
-	formname = g_ohosPickFormname;
-	path = g_ohosPickPath;
-	accepted = g_ohosPickAccepted;
-	g_ohosPickReady = false;
+	const OhosPickResult &pick = g_pickQueue.front();
+	formname = pick.formname;
+	path = pick.path;
+	accepted = pick.accepted;
+	g_pickQueue.pop_front();
 	return true;
 }
 

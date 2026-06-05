@@ -5,9 +5,11 @@
 #pragma once
 
 #include "cpp_api/s_base.h"
+#include "util/string.h"
 
 class ScriptApiPauseMenu : virtual public ScriptApiBase
 {
 public:
 	void open_settings();
+	void handlePauseMenuButtons(const StringMap &fields);
 };

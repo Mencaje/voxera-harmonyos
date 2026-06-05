@@ -150,8 +150,63 @@ local function append_slot_visual(parts, x, y, pick_w, pick_h, border, tex_dir, 
 	end
 end
 
+-- OHOS tablet: nested container[] anchors misplace widgets; use absolute coords instead.
+local function get_formspec_ohos_simple(dlgdata)
+	dlgdata = dlgdata or {}
+	local size, padding, btn_h, bottom_y = layout_metrics()
+	local pick_w = 2.5
+	local pick_h = 2.5
+	local inner = pick_w - 0.12
+	local border = "#aaaaaa"
+	local dl_btn_w = 3.6
+	local tex_dir = defaulttexturedir or ""
+	local plus_img = core.formspec_escape(tex_dir .. "plus.png") or ""
+	local left_x = padding.x
+	local top_y = padding.y
+	local back_x = padding.x
+	local dl_x = size.x - padding.x - dl_btn_w
+	return fs(
+		"formspec_version[6]",
+		"size[", size.x, ",", size.y, "]",
+		"padding[0,0]",
+		"bgcolor[;true]",
+		pick_box_formspec(left_x, top_y, pick_w, pick_h, border),
+		"style[", PICK_BUTTON, ";border=false;bgcolor=#00000000]",
+		"style[", PICK_BUTTON, ":hovered;bgcolor=#ffffff12]",
+		"style[", PICK_BUTTON, ":pressed;bgcolor=#ffffff22]",
+		"button[", left_x + 0.12, ",", top_y + 0.12, ";", inner, ",", inner, ";", PICK_BUTTON, ";]",
+		"image[", left_x + pick_w / 2 - 0.75, ",", top_y + pick_h / 2 - 0.75,
+			";1.5,1.5;", plus_img, "]",
+		"tooltip[", PICK_BUTTON, ";",
+			zh_menu("Open downloaded package locally", "本地打开下载的包"), "]",
+		"button[", back_x, ",", bottom_y, ";2,", btn_h, ";back;",
+			zh_menu("Back", "返回"), "]",
+		"button[", dl_x, ",", bottom_y, ";", dl_btn_w, ",", btn_h, ";", DOWNLOAD_BTN, ";",
+			zh_menu("Go to download packages", "前往下载包"), "]"
+	)
+end
+
+local function ohos_hide_menu_decorations()
+	mm_game_theme.clear_single("header")
+	mm_game_theme.clear_single("footer")
+	core.set_topleft_text("")
+end
+
+local function ohos_restore_menu_decorations()
+	local gameid = core.settings:get("menu_last_game")
+	local game = gameid and pkgmgr.find_by_gameid(gameid)
+	if game then
+		mm_game_theme.set_game(game)
+	else
+		mm_game_theme.set_engine(false)
+	end
+end
+
 local function get_formspec(dlgdata)
 	dlgdata = dlgdata or {}
+	if PLATFORM == "HarmonyOS" then
+		return get_formspec_ohos_simple(dlgdata)
+	end
 	local size, padding, btn_h, bottom_y = layout_metrics()
 	local pick_w = 2.5
 	local pick_h = 2.5
@@ -259,6 +314,10 @@ local function apply_install_result(dlg, result)
 		end
 		if result.content_type == "game" and result.id then
 			core.settings:set("menu_last_game", result.id)
+			local game = pkgmgr.find_by_gameid(result.id)
+			if game and apply_game then
+				apply_game(game)
+			end
 		end
 		ui.update()
 		return
@@ -442,12 +501,26 @@ function create_local_game_install_dlg()
 	local dlg
 	local function handle_events(event)
 		if event == "DialogShow" then
-			mm_game_theme.set_engine(true)
+			if PLATFORM == "HarmonyOS" then
+				-- Clear header/footer only (avoid full set_engine GPU spike on tablet).
+				ohos_hide_menu_decorations()
+			else
+				mm_game_theme.set_engine(true)
+			end
+			if PLATFORM == "HarmonyOS" and core.ohos_release_pointer then
+				core.ohos_release_pointer()
+			end
 			set_zip_drop_target(PATH_DIALOG)
 			return true
 		end
 		if event == "DialogHide" then
 			set_zip_drop_target("")
+			if PLATFORM == "HarmonyOS" then
+				ohos_restore_menu_decorations()
+			end
+			if PLATFORM == "HarmonyOS" and core.ohos_release_pointer then
+				core.ohos_release_pointer()
+			end
 			return true
 		end
 		return false
@@ -464,4 +537,30 @@ function create_local_game_install_dlg()
 	end
 
 	return dlg
+end
+
+-- Phone native UI: install from ArkTS file picker without showing this dialog.
+function phone_native_install_from_path(path)
+	if PLATFORM ~= "HarmonyOS" or DEVICE_FORM_FACTOR ~= "phone" then
+		return
+	end
+	if not path or path == "" then
+		return
+	end
+	local games_before = #pkgmgr.games
+	local dlg = create_local_game_install_dlg()
+	dlg.show = function() end
+	dlg.hide = function() end
+	run_install(dlg, path)
+	if #pkgmgr.games > games_before then
+		if core.ohos_set_status then
+			core.ohos_set_status("phone_install:ok")
+		end
+	elseif dlg.data.pending and dlg.data.pending.status ~= STATUS.installing then
+		local msg = dlg.data.pending.status_text or "error"
+		if core.ohos_set_status then
+			core.ohos_set_status("phone_install:err:" .. msg)
+		end
+	end
+	dlg:delete()
 end

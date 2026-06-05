@@ -18,7 +18,7 @@
     },
     {
       "name": "permission_documents_reason",
-      "value": "Save worlds and mods to Documents/Voxera/user_data so you can back them up"
+      "value": "Save worlds and mods to Documents/Voxera (storage access, not location)"
     }
   ]
 }

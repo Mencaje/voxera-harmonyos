@@ -14,7 +14,7 @@ interface BootstrapManifest {
 const DOMAIN = 0x0000;
 const TAG = 'LuantiAssets';
 /** Bump when builtin/locale in HAP change — triggers full reinstall on device. */
-const ASSETS_GENERATION = 29;
+const ASSETS_GENERATION = 52;
 const MARKER = `luanti_assets_installed_v${ASSETS_GENERATION}`;
 const ZIP_RAW = 'luanti_assets.zip';
 const MANIFEST_RAW = 'bootstrap_manifest.json';
@@ -42,16 +42,26 @@ const BOOTSTRAP_FONTS: string[] = [
 /** Copied from rawfile when zip omits UI textures on device. */
 /** Always refreshed from HAP rawfile (menu Lua hotfix without full wipe). */
 const FORCE_RAW_BUILTIN: string[] = [
+  'builtin/mainmenu/after.lua',
+  'builtin/mainmenu/init.lua',
   'builtin/mainmenu/tab_local.lua',
   'builtin/mainmenu/dlg_create_world.lua',
   'builtin/mainmenu/content/init.lua',
   'builtin/mainmenu/tab_content.lua',
   'builtin/mainmenu/content/dlg_contentdb.lua',
   'builtin/mainmenu/content/dlg_local_game.lua',
+  'builtin/mainmenu/content/phone_native_install.lua',
+  'builtin/mainmenu/content/phone_native_local.lua',
+  'builtin/mainmenu/content/phone_native_content.lua',
+  'builtin/mainmenu/content/phone_native_settings.lua',
+  'builtin/pause_menu/after.lua',
+  'builtin/pause_menu/init.lua',
+  'builtin/common/settings/dlg_settings.lua',
   'builtin/mainmenu/content/local_install.lua',
   'builtin/mainmenu/content/pkgmgr.lua',
   'builtin/mainmenu/game_theme.lua',
   'builtin/mainmenu/tab_about.lua',
+  'builtin/mainmenu/tab_online.lua',
   'builtin/mainmenu/dlg_config_world.lua',
 ];
 
@@ -59,6 +69,8 @@ const FORCE_RAW_BUILTIN: string[] = [
 const FORCE_RAW_TEXTURES: string[] = [
   'textures/base/pack/voxera_menu_header.png',
   'textures/base/pack/voxera_about_source.png',
+  'textures/base/pack/no_screenshot.png',
+  'textures/base/pack/menu_overlay.png',
 ];
 
 const CRITICAL_TEXTURES: string[] = [

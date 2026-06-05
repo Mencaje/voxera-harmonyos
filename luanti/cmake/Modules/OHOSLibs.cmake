@@ -49,11 +49,45 @@ set(ZSTD_INCLUDE_DIR ${DEPS}/Zstd/include)
 set(ZSTD_LIBRARY ${DEPS}/Zstd/libzstd.a)
 set(SDL2_INCLUDE_DIRS ${DEPS}/SDL2/include/SDL2)
 set(SDL2_LIBRARIES ${DEPS}/SDL2/libSDL2.a)
-# Prefer a local ohos_sdl2 rebuild (has Voxera XComponent resize/input symbols).
-set(_VOXERA_SDL_BUILD "${LUANTI_ROOT}/../third_party/ohos_sdl2_build/libSDL2.a")
+# Optional per-ABI ohos_sdl2 rebuild (Voxera XComponent resize/input symbols).
+set(_VOXERA_SDL_BUILD "${LUANTI_ROOT}/../third_party/ohos_sdl2_build/${OHOS_ABI}/libSDL2.a")
+if(NOT EXISTS "${_VOXERA_SDL_BUILD}" AND OHOS_ABI STREQUAL "x86_64")
+	set(_VOXERA_SDL_BUILD "${LUANTI_ROOT}/../third_party/ohos_sdl2_build/libSDL2.a")
+endif()
 if(EXISTS "${_VOXERA_SDL_BUILD}")
 	set(SDL2_LIBRARIES "${_VOXERA_SDL_BUILD}")
-	message(STATUS "Using rebuilt OHOS SDL2: ${SDL2_LIBRARIES}")
+	message(STATUS "Using rebuilt OHOS SDL2 (${OHOS_ABI}): ${SDL2_LIBRARIES}")
+else()
+	message(STATUS "Using OHOS deps SDL2 (${OHOS_ABI}): ${SDL2_LIBRARIES}")
 endif()
+
+# cJSON (linked separately on OHOS; must match target ABI)
+set(CJSON_LIBRARY "")
+foreach(_cjson IN ITEMS
+	"${LUANTI_ROOT}/../third_party/ohos_sdl2_build/${OHOS_ABI}/cjson/libcjson.a"
+	"${DEPS}/cjson/libcjson.a"
+)
+	if(EXISTS "${_cjson}")
+		set(CJSON_LIBRARY "${_cjson}")
+		break()
+	endif()
+endforeach()
+if(OHOS_ABI STREQUAL "x86_64" AND NOT CJSON_LIBRARY)
+	foreach(_cjson IN ITEMS
+		"${LUANTI_ROOT}/../third_party/ohos_sdl2_build/cjson/libcjson.a"
+	)
+		if(EXISTS "${_cjson}")
+			set(CJSON_LIBRARY "${_cjson}")
+			break()
+		endif()
+	endforeach()
+endif()
+if(CJSON_LIBRARY)
+	message(STATUS "Using OHOS cJSON (${OHOS_ABI}): ${CJSON_LIBRARY}")
+else()
+	message(WARNING "OHOS cJSON not found for ${OHOS_ABI}. Run: scripts/build_ohos_sdl2.ps1 with OHOS_ARCH=${OHOS_ABI}")
+endif()
+
+set(OHOS_ABI "${OHOS_ABI}" CACHE INTERNAL "HarmonyOS ABI for this configure")
 # Internal OHOS SDL sources (OhosPluginManager, OHOS_SetScreen*, etc.)
 set(SDL2_OHOS_SRC_DIR "${LUANTI_ROOT}/../third_party/ohos_sdl2/src")

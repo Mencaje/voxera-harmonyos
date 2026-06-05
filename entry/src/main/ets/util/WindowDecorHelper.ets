@@ -62,32 +62,38 @@ export class WindowDecorHelper {
   }
 
   /**
-   * HarmonyOS 2in1 (PC): setWindowLayoutFullScreen is unsupported in free multi-window mode
-   * (WMS logs "OnSetWindowLayoutFullScreen device not support"). Use maximize presentation instead.
-   * @see window.Window.maximize / MaximizePresentation / setTitleAndDockHoverShown (API 12–20)
+   * HarmonyOS 2in1 PC (API 20): maximize presentation + dock hover.
+   * Other devices: layout fullscreen + system bars.
    */
   static async applyImmersiveFullscreen(win: window.Window, immersive: boolean,
     statusBefore?: window.WindowStatusType): Promise<void> {
     if (deviceInfo.deviceType === '2in1') {
-      if (immersive) {
-        await win.maximize(window.MaximizePresentation.ENTER_IMMERSIVE_DISABLE_TITLE_AND_DOCK_HOVER);
-        await win.setTitleAndDockHoverShown(false, false);
-        hilog.info(DOMAIN, TAG, '2in1 immersive ON (maximize presentation, dock hover off)');
-      } else {
-        await win.maximize(window.MaximizePresentation.EXIT_IMMERSIVE);
-        await win.setTitleAndDockHoverShown(true, true);
-        const prior = statusBefore ?? window.WindowStatusType.FLOATING;
-        if (prior === window.WindowStatusType.FLOATING) {
-          await win.recover();
+      try {
+        if (immersive) {
+          await win.maximize(window.MaximizePresentation.ENTER_IMMERSIVE_DISABLE_TITLE_AND_DOCK_HOVER);
+          await win.setTitleAndDockHoverShown(false, false);
+          hilog.info(DOMAIN, TAG, '2in1 immersive ON');
+        } else {
+          await win.maximize(window.MaximizePresentation.EXIT_IMMERSIVE);
+          await win.setTitleAndDockHoverShown(true, true);
+          const prior = statusBefore ?? window.WindowStatusType.FLOATING;
+          if (prior === window.WindowStatusType.FLOATING) {
+            await win.recover();
+          }
+          hilog.info(DOMAIN, TAG, '2in1 immersive OFF');
         }
-        hilog.info(DOMAIN, TAG, '2in1 immersive OFF (recover=%{public}s)',
-          prior === window.WindowStatusType.FLOATING ? 'yes' : 'no');
+      } catch (err) {
+        hilog.warn(DOMAIN, TAG, '2in1 immersive failed: %{public}s', JSON.stringify(err));
       }
       return;
     }
-    await win.setWindowLayoutFullScreen(immersive);
-    await win.setWindowSystemBarEnable(immersive ? [] : ['status', 'navigation']);
-    hilog.info(DOMAIN, TAG, 'layout fullscreen=%{public}s', immersive ? 'on' : 'off');
+    try {
+      await win.setWindowLayoutFullScreen(immersive);
+      await win.setWindowSystemBarEnable(immersive ? [] : ['status', 'navigation']);
+      hilog.info(DOMAIN, TAG, 'layout fullscreen=%{public}s', immersive ? 'on' : 'off');
+    } catch (err) {
+      hilog.warn(DOMAIN, TAG, 'applyImmersiveFullscreen: %{public}s', JSON.stringify(err));
+    }
   }
 
   async setImmersive(context: common.UIAbilityContext, immersive: boolean): Promise<void> {

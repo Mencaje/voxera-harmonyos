@@ -22,6 +22,36 @@
 #include "renderingengine.h"
 #include "version.h"
 #include <IGUIFont.h>
+#if defined(__OHOS__)
+#include "porting_ohos.h"
+#include "settings.h"
+#endif
+
+#if defined(__OHOS__)
+namespace {
+static constexpr float OHOS_PHONE_HUD_FONT_SCALE = 1.45f;
+
+unsigned ohosPhoneHudFontSize(unsigned base_size)
+{
+	return rangelim((unsigned)(base_size * OHOS_PHONE_HUD_FONT_SCALE + 0.5f), 12u, 72u);
+}
+
+s32 ohosPhoneHudTopInsetPx()
+{
+	if (porting::ohosGetDeviceFormFactor() != "phone")
+		return 0;
+	const float density = rangelim(g_settings->getFloat("gui_scaling"), 0.5f, 20.f) *
+		RenderingEngine::getDisplayDensity();
+	// Below ArkUI top-left backpack orb (16vp + 40vp) plus a small gap.
+	return (s32)(178.f * density);
+}
+}
+
+static s32 hudTextBaseY()
+{
+	return 5 + ohosPhoneHudTopInsetPx();
+}
+#endif
 
 inline static const char *yawToDirectionString(int yaw)
 {
@@ -48,10 +78,26 @@ void GameUI::init()
 	m_guitext_chat = gui::StaticText::add(guienv, L"", core::recti(),
 		false, true, guiroot);
 	u16 chat_font_size = g_settings->getU16("chat_font_size");
+	unsigned chat_effective = chat_font_size != 0 ?
+		rangelim(chat_font_size, (u16)5, (u16)72) :
+		g_fontengine->getDefaultFontSize();
+#if defined(__OHOS__)
+	if (porting::ohosGetDeviceFormFactor() == "phone") {
+		gui::IGUIFont *phone_font = g_fontengine->getFont(
+			ohosPhoneHudFontSize(chat_effective), FM_Unspecified);
+		m_guitext->setOverrideFont(phone_font);
+		m_guitext2->setOverrideFont(phone_font);
+		m_guitext_chat->setOverrideFont(phone_font);
+	} else if (chat_font_size != 0) {
+		m_guitext_chat->setOverrideFont(g_fontengine->getFont(
+			rangelim(chat_font_size, (u16)5, (u16)72), FM_Unspecified));
+	}
+#else
 	if (chat_font_size != 0) {
 		m_guitext_chat->setOverrideFont(g_fontengine->getFont(
-			rangelim(chat_font_size, 5, 72), FM_Unspecified));
+			rangelim(chat_font_size, (u16)5, (u16)72), FM_Unspecified));
 	}
+#endif
 
 
 	// Infotext of nodes and objects.
@@ -108,7 +154,13 @@ void GameUI::update(const RunStats &stats, Client *client, MapDrawControl *draw_
 			<< std::setprecision(2)
 			<< " | RTT: " << (client->getRTT() * 1000.0f) << "ms";
 
-		m_guitext->setRelativePosition(core::rect<s32>(5, 5, screensize.X, screensize.Y));
+		m_guitext->setRelativePosition(core::rect<s32>(5,
+#if defined(__OHOS__)
+				hudTextBaseY(),
+#else
+				5,
+#endif
+				screensize.X, screensize.Y));
 
 		setStaticText(m_guitext, utf8_to_wide(os.str()));
 
@@ -147,7 +199,12 @@ void GameUI::update(const RunStats &stats, Client *client, MapDrawControl *draw_
 			}
 		}
 
-		m_guitext2->setRelativePosition(core::rect<s32>(5, 5 + minimal_debug_height,
+		m_guitext2->setRelativePosition(core::rect<s32>(5,
+#if defined(__OHOS__)
+				hudTextBaseY() + minimal_debug_height,
+#else
+				5 + minimal_debug_height,
+#endif
 				screensize.X, screensize.Y));
 
 		setStaticText(m_guitext2, utf8_to_wide(os.str()).c_str());
@@ -197,7 +254,11 @@ void GameUI::setChatText(const EnrichedString &chat_text, u32 recent_chat_count)
 void GameUI::updateChatSize()
 {
 	// Update gui element size and position
+#if defined(__OHOS__)
+	s32 chat_y = hudTextBaseY();
+#else
 	s32 chat_y = 5;
+#endif
 
 	if (m_flags.show_minimal_debug)
 		chat_y += m_guitext->getTextHeight();
@@ -233,7 +294,13 @@ void GameUI::updateProfiler()
 	str.setBackground(video::SColor(120, 0, 0, 0));
 	setStaticText(m_guitext_profiler, str);
 
-	v2s32 upper_left(5, 10);
+	v2s32 upper_left(5,
+#if defined(__OHOS__)
+		hudTextBaseY() + 5
+#else
+		10
+#endif
+	);
 	if (m_flags.show_minimal_debug)
 		upper_left.Y += m_guitext->getTextHeight();
 	if (m_flags.show_basic_debug)

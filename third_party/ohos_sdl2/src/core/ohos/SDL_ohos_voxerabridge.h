@@ -23,6 +23,9 @@ void OHOS_VoxeraNotifySurfaceChanged(struct OH_NativeXComponent *component, void
 /* Forward ArkUI pointer/keyboard to SDL (Voxera registers its own surface callbacks). */
 bool OHOS_VoxeraRegisterInputCallbacks(struct OH_NativeXComponent *component);
 
+/** Touch from XComponent DispatchTouchEvent (ARM devices; x86 emulator often uses mouse only). */
+void OHOS_VoxeraDispatchTouchEvent(struct OH_NativeXComponent *component, void *window);
+
 /** Inject a key from ArkUI when XComponent does not receive focus (PC 2in1). */
 void OHOS_VoxeraInjectKeyEvent(int keycode, int down);
 

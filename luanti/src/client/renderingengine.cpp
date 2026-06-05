@@ -337,13 +337,72 @@ void RenderingEngine::draw_load_screen(const std::wstring &text,
 {
 	v2u32 screensize = getWindowSize();
 
-	v2s32 textsize(g_fontengine->getTextWidth(text), g_fontengine->getLineHeight());
+	int percent_min = 0;
+	int percent_max = percent;
+	if (indef_pos) {
+		*indef_pos = fmodf(*indef_pos + (dtime * 50.0f), 140.0f);
+		percent_max = std::min((int) *indef_pos, 100);
+		percent_min = std::max((int) *indef_pos - 40, 0);
+	}
+
+	u32 imgW = 0;
+	u32 imgH = 0;
+	video::ITexture *progress_img = nullptr;
+	video::ITexture *progress_img_bg = nullptr;
+	core::dimension2d<u32> img_size(0, 0);
+	const bool draw_bar = (percent_min >= 0) && (percent_max <= 100);
+
+	if (draw_bar) {
+		progress_img = tsrc->getTexture("progress_bar.png");
+		progress_img_bg = tsrc->getTexture("progress_bar_bg.png");
+		if (progress_img && progress_img_bg) {
+			img_size = progress_img_bg->getSize();
+
+#if defined(__ANDROID__)
+			float imgRatio = (float)img_size.Height / img_size.Width;
+			imgW = screensize.X / 2.2f;
+			imgH = floor(imgW * imgRatio);
+#elif defined(__OHOS__)
+			if (porting::ohosGetDeviceFormFactor() == "phone") {
+				float imgRatio = (float)img_size.Height / img_size.Width;
+				imgW = screensize.X / 2.05f;
+				imgH = (u32)floor(imgW * imgRatio);
+			} else {
+				float density = g_settings->getFloat("gui_scaling", 0.5f, 20.0f) *
+						getDisplayDensity();
+				imgW = rangelim(img_size.Width, 200, 600) * density;
+				imgH = rangelim(img_size.Height, 24, 72) * density;
+			}
+#else
+			float density = g_settings->getFloat("gui_scaling", 0.5f, 20.0f) *
+					getDisplayDensity();
+			imgW = rangelim(img_size.Width, 200, 600) * density;
+			imgH = rangelim(img_size.Height, 24, 72) * density;
+#endif
+		}
+	}
+
+	unsigned load_font_size = FONT_SIZE_UNSPECIFIED;
+#if defined(__OHOS__)
+	if (porting::ohosGetDeviceFormFactor() == "phone" && imgH > 0) {
+		load_font_size = rangelim((unsigned)(imgH * 0.44f), 18u, 32u);
+	}
+#endif
+
+	v2s32 textsize(
+			g_fontengine->getTextWidth(text, load_font_size),
+			g_fontengine->getLineHeight(load_font_size));
 	v2s32 center(screensize.X / 2, screensize.Y / 2);
 	core::rect<s32> textrect(center - textsize / 2, center + textsize / 2);
 
 	gui::IGUIStaticText *guitext =
 			gui::StaticText::add(guienv, text, textrect, false, false);
-	guitext->setTextAlignment(gui::EGUIA_CENTER, gui::EGUIA_UPPERLEFT);
+	guitext->setTextAlignment(gui::EGUIA_CENTER, gui::EGUIA_CENTER);
+#if defined(__OHOS__)
+	if (load_font_size != FONT_SIZE_UNSPECIFIED) {
+		guitext->setOverrideFont(g_fontengine->getFont(load_font_size));
+	}
+#endif
 
 	auto *driver = get_video_driver();
 
@@ -355,53 +414,26 @@ void RenderingEngine::draw_load_screen(const std::wstring &text,
 		g_menucloudsmgr->drawAll();
 	}
 
-	int percent_min = 0;
-	int percent_max = percent;
-	if (indef_pos) {
-		*indef_pos = fmodf(*indef_pos + (dtime * 50.0f), 140.0f);
-		percent_max = std::min((int) *indef_pos, 100);
-		percent_min = std::max((int) *indef_pos - 40, 0);
-	}
-	// draw progress bar
-	if ((percent_min >= 0) && (percent_max <= 100)) {
-		video::ITexture *progress_img = tsrc->getTexture("progress_bar.png");
-		video::ITexture *progress_img_bg =
-				tsrc->getTexture("progress_bar_bg.png");
+	if (draw_bar && progress_img && progress_img_bg && imgW > 0) {
+		v2s32 img_pos((screensize.X - imgW) / 2,
+				(screensize.Y - imgH) / 2);
 
-		if (progress_img && progress_img_bg) {
-#ifndef __ANDROID__
-			const core::dimension2d<u32> &img_size =
-					progress_img_bg->getSize();
-			float density = g_settings->getFloat("gui_scaling", 0.5f, 20.0f) *
-					getDisplayDensity();
-			u32 imgW = rangelim(img_size.Width, 200, 600) * density;
-			u32 imgH = rangelim(img_size.Height, 24, 72) * density;
-#else
-			const core::dimension2d<u32> img_size(256, 48);
-			float imgRatio = (float)img_size.Height / img_size.Width;
-			u32 imgW = screensize.X / 2.2f;
-			u32 imgH = floor(imgW * imgRatio);
-#endif
-			v2s32 img_pos((screensize.X - imgW) / 2,
-					(screensize.Y - imgH) / 2);
+		draw2DImageFilterScaled(get_video_driver(), progress_img_bg,
+				core::rect<s32>(img_pos.X, img_pos.Y,
+						img_pos.X + imgW,
+						img_pos.Y + imgH),
+				core::rect<s32>(0, 0, img_size.Width,
+						img_size.Height),
+				0, 0, true);
 
-			draw2DImageFilterScaled(get_video_driver(), progress_img_bg,
-					core::rect<s32>(img_pos.X, img_pos.Y,
-							img_pos.X + imgW,
-							img_pos.Y + imgH),
-					core::rect<s32>(0, 0, img_size.Width,
-							img_size.Height),
-					0, 0, true);
-
-			draw2DImageFilterScaled(get_video_driver(), progress_img,
-					core::rect<s32>(img_pos.X + (percent_min * imgW) / 100, img_pos.Y,
-							img_pos.X + (percent_max * imgW) / 100,
-							img_pos.Y + imgH),
-					core::rect<s32>(percent_min * img_size.Width / 100, 0,
-							percent_max * img_size.Width / 100,
-							img_size.Height),
-					0, 0, true);
-		}
+		draw2DImageFilterScaled(get_video_driver(), progress_img,
+				core::rect<s32>(img_pos.X + (percent_min * imgW) / 100, img_pos.Y,
+						img_pos.X + (percent_max * imgW) / 100,
+						img_pos.Y + imgH),
+				core::rect<s32>(percent_min * img_size.Width / 100, 0,
+						percent_max * img_size.Width / 100,
+						img_size.Height),
+				0, 0, true);
 	}
 
 	guienv->drawAll();
@@ -561,7 +593,7 @@ s32 RenderingEngine::ohosFormspecMinScreenDim(s32 actual_min_dim)
 	 * Scale dialogs with the window (fullscreen grows the panel) but cap the
 	 * slope so modals never reach the old "giant fullscreen" size.
 	 */
-	const float ratio = 0.80f;
+	const float ratio = 0.92f;
 	const s32 floor_dim = 900;
 	const s32 ceil_dim = 1920;
 	s32 eff = (s32)(actual_min_dim * ratio + 0.5f);

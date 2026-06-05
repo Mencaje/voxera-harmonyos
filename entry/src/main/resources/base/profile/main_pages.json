@@ -1,6 +1,12 @@
 {
   "src": [
     "pages/Index",
-    "pages/Game"
+    "pages/Game",
+    "pages/LegalConsent",
+    "pages/LegalConsentTablet",
+    "pages/LegalConsentPhone",
+    "pages/HealthyGamingDeclaration",
+    "pages/HealthyGamingDeclarationTablet",
+    "pages/HealthyGamingDeclarationPhone"
   ]
 }

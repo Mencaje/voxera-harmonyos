@@ -20,8 +20,16 @@
 #include "../SDL_ohos_tstype.h"
 #include "adapter_c_ts.h"
 
+static bool NapiCallbackReady(void)
+{
+    return g_napiCallback != nullptr && g_napiCallback->tsfn != nullptr;
+}
+
 void ThreadSafeSyn(cJSON * const root)
 {
+    if (!NapiCallbackReady()) {
+        return;
+    }
     ThreadLockInfo *lockInfo = new ThreadLockInfo();
     std::uintptr_t lockInfoPointer = reinterpret_cast<std::uintptr_t>(lockInfo);
     cJSON_AddNumberToObject(root, OHOS_JSON_ASYN, (double)lockInfoPointer);
@@ -38,6 +46,9 @@ void ThreadSafeSyn(cJSON * const root)
 
 static bool ThreadSafeAsyn(cJSON * const root)
 {
+    if (!NapiCallbackReady()) {
+        return false;
+    }
     napi_status status = napi_call_threadsafe_function(g_napiCallback->tsfn, root, napi_tsfn_nonblocking);
     if (status != napi_ok) {
         return false;
@@ -228,6 +239,9 @@ bool SDL_ReParentNode(napi_ref nodeParentNewRef, napi_ref nodeChildRef)
 
 bool SDL_SetNodeVisibility(napi_ref nodeRef, int visibility)
 {
+    if (!NapiCallbackReady()) {
+        return false;
+    }
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) {
         return false;

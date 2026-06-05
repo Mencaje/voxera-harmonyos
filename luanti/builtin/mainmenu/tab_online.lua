@@ -2,6 +2,8 @@
 -- Copyright (C) 2014 sapier
 -- SPDX-License-Identifier: LGPL-2.1-or-later
 
+local VOXERA_PUBLIC_SERVERS_URL = "https://voxeraservers.mencaje.com/"
+
 local function get_sorted_servers()
 	local servers = {
 		fav = {},
@@ -11,7 +13,7 @@ local function get_sorted_servers()
 
 	local favs = serverlistmgr.get_favorites()
 	local taken_favs = {}
-	local result = menudata.search_result or serverlistmgr.servers
+	local result = menudata.search_result or serverlistmgr.servers or {}
 	for _, server in ipairs(result) do
 		server.is_favorite = false
 		for index, fav in ipairs(favs) do
@@ -75,9 +77,11 @@ end
 local function find_selected_server()
 	local address = core.settings:get("address")
 	local port = tonumber(core.settings:get("remote_port"))
-	for _, server in ipairs(serverlistmgr.servers) do
-		if server.address == address and server.port == port then
-			return server
+	if serverlistmgr.servers then
+		for _, server in ipairs(serverlistmgr.servers) do
+			if server.address == address and server.port == port then
+				return server
+			end
 		end
 	end
 	for _, server in ipairs(serverlistmgr.get_favorites()) do
@@ -87,10 +91,192 @@ local function find_selected_server()
 	end
 end
 
+local function build_connect_panel_formspec(selected_server)
+	local retval =
+		"container[9.75,0]" ..
+		"box[0,0;5.75,7.1;#666666]" ..
+
+		"label[0.25,0.35;" .. fgettext("Address") .. "]" ..
+		"label[4.25,0.35;" .. fgettext("Port") .. "]" ..
+		"field[0.25,0.5;4,0.75;te_address;;" ..
+			core.formspec_escape(core.settings:get("address")) .. "]" ..
+		"field[4.25,0.5;1.25,0.75;te_port;;" ..
+			core.formspec_escape(core.settings:get("remote_port")) .. "]" ..
+
+		"label[0.25,1.6;" .. fgettext("Server Description") .. "]" ..
+		"box[0.25,1.85;5.25,2.7;#999999]" ..
+
+		"container[0,4.8]" ..
+		"label[0.25,0;" .. fgettext("Name") .. "]" ..
+		"label[2.875,0;" .. fgettext("Password") .. "]" ..
+		"field[0.25,0.2;2.625,0.75;te_name;;" .. core.formspec_escape(core.settings:get("name")) .. "]" ..
+		"pwdfield[2.875,0.2;2.625,0.75;te_pwd;]" ..
+		"container_end[]"
+
+	if core.settings:get_bool("enable_split_login_register") then
+		retval = retval .. "button[0.25,6;2.5,0.75;btn_mp_register;" .. fgettext("Register") .. "]"
+	end
+	retval = retval .. "button[3,6;2.5,0.75;btn_mp_login;" .. fgettext("Login") .. "]"
+
+	if selected_server then
+		gamedata.serverdescription = selected_server.description
+		if gamedata.serverdescription then
+			retval = retval .. "textarea[0.25,1.85;5.25,2.7;;;" ..
+				core.formspec_escape(gamedata.serverdescription) .. "]"
+		end
+
+		if selected_server.url then
+			retval = retval .. "tooltip[btn_server_url;" .. fgettext("Open server website") .. "]"
+			retval = retval .. "style[btn_server_url;padding=6]"
+			retval = retval .. "image_button[3.5,1.3;0.5,0.5;" ..
+				core.formspec_escape(defaulttexturedir .. "server_url.png") .. ";btn_server_url;]"
+		else
+			retval = retval .. "image[3.6,1.4;0.3,0.3;" .. core.formspec_escape(defaulttexturedir ..
+				"server_url_unavailable.png") .. "]"
+		end
+
+		local mods = selected_server.mods
+		if mods and #mods > 0 then
+			local tooltip = ""
+			if selected_server.gameid then
+				tooltip = fgettext("Game: $1", selected_server.gameid) .. "\n"
+			end
+			tooltip = tooltip .. fgettext("Number of mods: $1", #mods)
+
+			retval = retval ..
+				"tooltip[btn_view_mods;" .. tooltip .. "]" ..
+				"style[btn_view_mods;padding=6]" ..
+				"image_button[4,1.3;0.5,0.5;" .. core.formspec_escape(defaulttexturedir ..
+				"server_view_mods.png") .. ";btn_view_mods;]"
+		else
+			retval = retval .. "image[4.1,1.4;0.3,0.3;" .. core.formspec_escape(defaulttexturedir ..
+				"server_view_mods_unavailable.png") .. "]"
+		end
+
+		local clients_list = selected_server.clients_list
+		local can_view_clients_list = clients_list and #clients_list > 0
+		if can_view_clients_list then
+			table.sort(clients_list, function(a, b)
+				return a:lower() < b:lower()
+			end)
+			local max_clients = 5
+			if #clients_list > max_clients then
+				retval = retval .. "tooltip[btn_view_clients;" ..
+						fgettext("Players:\n$1", table.concat(clients_list, "\n", 1, max_clients)) .. "\n..." .. "]"
+			else
+				retval = retval .. "tooltip[btn_view_clients;" ..
+						fgettext("Players:\n$1", table.concat(clients_list, "\n")) .. "]"
+			end
+			retval = retval .. "style[btn_view_clients;padding=6]"
+			retval = retval .. "image_button[4.5,1.3;0.5,0.5;" .. core.formspec_escape(defaulttexturedir ..
+				"server_view_clients.png") .. ";btn_view_clients;]"
+		else
+			retval = retval .. "image[4.6,1.4;0.3,0.3;" .. core.formspec_escape(defaulttexturedir ..
+				"server_view_clients_unavailable.png") .. "]"
+		end
+
+		if is_selected_fav() then
+			retval = retval .. "tooltip[btn_delete_favorite;" .. fgettext("Remove favorite") .. "]"
+			retval = retval .. "style[btn_delete_favorite;padding=6]"
+			retval = retval .. "image_button[5,1.3;0.5,0.5;" ..
+				core.formspec_escape(defaulttexturedir .. "server_favorite_delete.png") .. ";btn_delete_favorite;]"
+		else
+			retval = retval .. "tooltip[btn_add_favorite;" .. fgettext("Add favorite") .. "]"
+			retval = retval .. "style[btn_add_favorite;padding=6]"
+			retval = retval .. "image_button[5,1.3;0.5,0.5;" ..
+				core.formspec_escape(defaulttexturedir .. "server_favorite.png") .. ";btn_add_favorite;]"
+		end
+	end
+
+	return retval .. "container_end[]"
+end
+
+local function get_harmonyos_formspec(tabview, name, tabdata)
+	common_update_cached_supp_proto()
+	local selected_server = find_selected_server()
+	return
+		"box[0.25,0.25;9.25,6.55;#666666]" ..
+		"button[1.25,2.85;7.25,1.25;btn_open_public_servers;" ..
+			core.formspec_escape("点击打开公共服务器") .. "]" ..
+		build_connect_panel_formspec(selected_server)
+end
+
+local function handle_connect_actions(tabview, fields, tabdata, tabdata_lookup)
+	local host_filled = (fields.te_address ~= "") and fields.te_port:match("^%s*[1-9][0-9]*%s*$")
+	local te_port_number = tonumber(fields.te_port)
+
+	if (fields.btn_mp_login or fields.key_enter) and host_filled then
+		gamedata.playername = fields.te_name
+		gamedata.password   = fields.te_pwd
+		gamedata.address    = fields.te_address
+		gamedata.port       = te_port_number
+
+		local enable_split_login_register = core.settings:get_bool("enable_split_login_register")
+		gamedata.allow_login_or_register = enable_split_login_register and "login" or "any"
+		gamedata.selected_world = 0
+
+		local idx = tabdata_lookup and core.get_table_index("servers")
+		local server = idx and tabdata_lookup[idx]
+
+		if server and server.address == gamedata.address and
+				server.port == gamedata.port then
+
+			serverlistmgr.add_favorite(server)
+
+			gamedata.servername        = server.name
+			gamedata.serverdescription = server.description
+
+			if not is_server_protocol_compat_or_error(
+						server.proto_min, server.proto_max) then
+				return true
+			end
+		else
+			gamedata.servername        = ""
+			gamedata.serverdescription = ""
+
+			serverlistmgr.add_favorite({
+				address = gamedata.address,
+				port = gamedata.port,
+			})
+		end
+
+		core.settings:set("address",     gamedata.address)
+		core.settings:set("remote_port", gamedata.port)
+
+		core.start()
+		return true
+	end
+
+	if fields.btn_mp_register and host_filled then
+		local idx = tabdata_lookup and core.get_table_index("servers")
+		local server = idx and tabdata_lookup[idx]
+		if server and (server.address ~= fields.te_address or server.port ~= te_port_number) then
+			server = nil
+		end
+
+		if server and not is_server_protocol_compat_or_error(
+					server.proto_min, server.proto_max) then
+			return true
+		end
+
+		local dlg = create_register_dialog(fields.te_address, te_port_number, server)
+		dlg:set_parent(tabview)
+		tabview:hide()
+		dlg:show()
+		return true
+	end
+
+	return false
+end
+
 local function get_formspec(tabview, name, tabdata)
 	-- Update the cached supported proto info,
 	-- it may have changed after a change by the settings menu.
 	common_update_cached_supp_proto()
+
+	if PLATFORM == "HarmonyOS" then
+		return get_harmonyos_formspec(tabview, name, tabdata)
+	end
 
 	if not tabdata.search_for then
 		tabdata.search_for = ""
@@ -503,6 +689,52 @@ local function main_button_handler(tabview, fields, name, tabdata)
 		core.settings:set("name", fields.te_name)
 	end
 
+	if PLATFORM == "HarmonyOS" then
+		if fields.btn_open_public_servers then
+			core.open_url(VOXERA_PUBLIC_SERVERS_URL)
+			return true
+		end
+
+		if fields.btn_add_favorite then
+			serverlistmgr.add_favorite(find_selected_server())
+			return true
+		end
+
+		if fields.btn_delete_favorite then
+			local server = find_selected_server()
+			if server then
+				serverlistmgr.delete_favorite(server)
+			end
+			return true
+		end
+
+		if fields.btn_server_url then
+			local server = find_selected_server()
+			if server and server.url then
+				core.open_url_dialog(server.url)
+			end
+			return true
+		end
+
+		if fields.btn_view_clients then
+			local dlg = create_clientslist_dialog(find_selected_server())
+			dlg:set_parent(tabview)
+			tabview:hide()
+			dlg:show()
+			return true
+		end
+
+		if fields.btn_view_mods then
+			local dlg = create_server_list_mods_dialog(find_selected_server())
+			dlg:set_parent(tabview)
+			tabview:hide()
+			dlg:show()
+			return true
+		end
+
+		return handle_connect_actions(tabview, fields, tabdata, nil)
+	end
+
 	if fields.servers then
 		local event = core.explode_table_event(fields.servers)
 		local server = tabdata.lookup[event.row]
@@ -596,77 +828,15 @@ local function main_button_handler(tabview, fields, name, tabdata)
 		return true
 	end
 
-	local host_filled = (fields.te_address ~= "") and fields.te_port:match("^%s*[1-9][0-9]*%s*$")
-	local te_port_number = tonumber(fields.te_port)
-
-	if (fields.btn_mp_login or fields.key_enter) and host_filled then
-		gamedata.playername = fields.te_name
-		gamedata.password   = fields.te_pwd
-		gamedata.address    = fields.te_address
-		gamedata.port       = te_port_number
-
-		local enable_split_login_register = core.settings:get_bool("enable_split_login_register")
-		gamedata.allow_login_or_register = enable_split_login_register and "login" or "any"
-		gamedata.selected_world = 0
-
-		local idx = core.get_table_index("servers")
-		local server = idx and tabdata.lookup[idx]
-
-		if server and server.address == gamedata.address and
-				server.port == gamedata.port then
-
-			serverlistmgr.add_favorite(server)
-
-			gamedata.servername        = server.name
-			gamedata.serverdescription = server.description
-
-			if not is_server_protocol_compat_or_error(
-						server.proto_min, server.proto_max) then
-				return true
-			end
-		else
-			gamedata.servername        = ""
-			gamedata.serverdescription = ""
-
-			serverlistmgr.add_favorite({
-				address = gamedata.address,
-				port = gamedata.port,
-			})
-		end
-
-		core.settings:set("address",     gamedata.address)
-		core.settings:set("remote_port", gamedata.port)
-
-		core.start()
-		return true
-	end
-
-	if fields.btn_mp_register and host_filled then
-		local idx = core.get_table_index("servers")
-		local server = idx and tabdata.lookup[idx]
-		if server and (server.address ~= fields.te_address or server.port ~= te_port_number) then
-			server = nil
-		end
-
-		if server and not is_server_protocol_compat_or_error(
-					server.proto_min, server.proto_max) then
-			return true
-		end
-
-		local dlg = create_register_dialog(fields.te_address, te_port_number, server)
-		dlg:set_parent(tabview)
-		tabview:hide()
-		dlg:show()
-		return true
-	end
-
-	return false
+	return handle_connect_actions(tabview, fields, tabdata, tabdata.lookup)
 end
 
 local function on_change(type)
 	if type == "ENTER" then
 		mm_game_theme.set_engine()
-		serverlistmgr.sync()
+		if PLATFORM ~= "HarmonyOS" then
+			serverlistmgr.sync()
+		end
 	end
 end
 

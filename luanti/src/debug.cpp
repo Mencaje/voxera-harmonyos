@@ -15,6 +15,12 @@
 #include "threading/mutex_auto_lock.h"
 #include "config.h"
 
+#ifdef __OHOS__
+namespace porting {
+void ohosLogFatal(const char *msg);
+}
+#endif
+
 #ifdef _MSC_VER
 	#include <dbghelp.h>
 	#include <windows.h>
@@ -43,6 +49,14 @@ void sanity_check_fn(const char *assertion, const char *file,
 	errorstream << file << ":" << line << ": " << function
 		<< ": An engine assumption '" << assertion << "' failed." << std::endl;
 
+#ifdef __OHOS__
+	{
+		char buf[512];
+		snprintf(buf, sizeof(buf), "sanity_check failed: %s at %s:%u %s",
+				assertion, file, line, function);
+		porting::ohosLogFatal(buf);
+	}
+#endif
 	abort();
 }
 
@@ -58,6 +72,14 @@ void fatal_error_fn(const char *msg, const char *file,
 	errorstream << file << ":" << line << ": " << function
 		<< ": A fatal error occurred: " << msg << std::endl;
 
+#ifdef __OHOS__
+	{
+		char buf[512];
+		snprintf(buf, sizeof(buf), "FATAL_ERROR: %s at %s:%u %s",
+				msg ? msg : "(null)", file, line, function);
+		porting::ohosLogFatal(buf);
+	}
+#endif
 	abort();
 }
 

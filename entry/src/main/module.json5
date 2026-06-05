@@ -4,7 +4,9 @@
     "type": "entry",
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
-    "deviceTypes": [
+        "deviceTypes": [
+      "default",
+      "tablet",
       "2in1"
     ],
     "deliveryWithInstall": true,
@@ -26,6 +28,9 @@
           "abilities": ["EntryAbility"],
           "when": "inuse"
         }
+      },
+      {
+        "name": "ohos.permission.VIBRATE"
       }
     ],
     "abilities": [
@@ -35,8 +40,9 @@
         "description": "$string:EntryAbility_desc",
         "icon": "$media:layered_image",
         "label": "$string:EntryAbility_label",
-        "startWindowIcon": "$media:startIcon",
+        "startWindowIcon": "$media:splash_logo",
         "startWindowBackground": "$color:start_window_background",
+        "orientation": "landscape",
         "exported": true,
         "skills": [
           {

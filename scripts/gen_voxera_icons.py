@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
+VOXERA_ROOT = ROOT / "voxera.png"
 PACK = ROOT / "luanti" / "textures" / "base" / "pack"
 SRC_LEGACY = PACK / "微信图片_20260517231146_146_1.png"
 BRAND = PACK / "voxera_brand.png"
@@ -18,6 +19,9 @@ ABOUT_OUTPUT = PACK / "voxera_about_source.png"
 # Launcher / layered icon only (change when user asks to resize 软件图标)
 APP_ICON_SIZE = 1024
 APP_LOGO_SCALE = 0.68
+# Cold-start splash (layer 1 + 2): larger logo from voxera.png on transparent canvas.
+SPLASH_ICON_SIZE = 1024
+SPLASH_LOGO_SCALE = 0.82
 
 # About page in-game only (change when user asks to resize 关于图标)
 # Match other menu textures (logo.png is 256²); Irrlicht loads reliably at this size.
@@ -34,6 +38,11 @@ RAWFILE_ABOUT = (
 
 
 def load_brand() -> Image.Image:
+    if VOXERA_ROOT.is_file():
+        img = Image.open(VOXERA_ROOT).convert("RGBA")
+        PACK.mkdir(parents=True, exist_ok=True)
+        img.save(BRAND)
+        return img
     if BRAND.is_file():
         return Image.open(BRAND).convert("RGBA")
     if SRC_LEGACY.is_file():
@@ -89,6 +98,12 @@ def write_about_png(logo: Image.Image) -> None:
     print(f"wrote {RAWFILE_ABOUT / ABOUT_OUTPUT.name}")
 
 
+def make_splash_foreground(logo: Image.Image) -> Image.Image:
+    fg = Image.new("RGBA", (SPLASH_ICON_SIZE, SPLASH_ICON_SIZE), (0, 0, 0, 0))
+    fit_center(fg, logo, SPLASH_LOGO_SCALE)
+    return fg
+
+
 def main() -> None:
     import sys
 
@@ -100,6 +115,7 @@ def main() -> None:
 
     logo = load_brand()
     fg = make_app_foreground(logo)
+    splash = make_splash_foreground(logo)
     bg = make_app_background()
     flat = make_flat_icon(logo)
     write_about_png(load_about_source())
@@ -108,6 +124,7 @@ def main() -> None:
         media.mkdir(parents=True, exist_ok=True)
         bg.save(media / "background.png", "PNG")
         fg.save(media / "foreground.png", "PNG")
+        splash.save(media / "splash_logo.png", "PNG")
         flat.save(media / "startIcon.png", "PNG")
         print(f"updated {media}")
 

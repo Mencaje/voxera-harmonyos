@@ -877,6 +877,12 @@ static bool read_config_file(const Settings &cmd_args)
 
 static void init_log_streams(const Settings &cmd_args)
 {
+#if defined(__OHOS__)
+	/* HarmonyOS sandbox often blocks debug.txt; rely on HiLog (OH_LOG / VoxeraLuanti). */
+	g_logger.removeOutput(&file_log_output);
+	return;
+#endif
+
 	std::string log_filename = porting::path_user + DIR_DELIM + DEBUGFILE;
 
 	if (cmd_args.exists("logfile"))

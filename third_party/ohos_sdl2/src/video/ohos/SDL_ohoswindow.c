@@ -29,8 +29,6 @@
 #define OHOS_WAIT_TIME 10
 
 #ifdef SDL_VIDEO_DRIVER_OHOS
-#if SDL_VIDEO_DRIVER_OHOS
-#endif
 
 #include "napi/native_api.h"
 #include "SDL_syswm.h"
@@ -109,6 +107,7 @@ void OHOS_SetWindowFullscreen(SDL_VideoDevice *thisDevice, SDL_Window *window, S
         }
         goto endfunction;
     }
+#endif /* __OHOS__ || VOXERA_EMBEDDED_SDL */
 
 endfunction:
 
@@ -183,11 +182,20 @@ void OHOS_SetWindowPosition(SDL_VideoDevice *thisDevice, SDL_Window *window)
 
 void OHOS_ShowWindow(SDL_VideoDevice *thisDevice, SDL_Window *window)
 {
+    (void)thisDevice;
+    /* Voxera libraryname XComponent: ohosHandle is OH_NativeXComponent*, not NAPI ref. */
+    if (window && (window->flags & SDL_WINDOW_FOREIGN_OHOS)) {
+        return;
+    }
     OHOS_SetNodeVisibility(window->ohosHandle, 0);
 }
 
 void OHOS_HideWindow(SDL_VideoDevice *thisDevice, SDL_Window *window)
 {
+    (void)thisDevice;
+    if (window && (window->flags & SDL_WINDOW_FOREIGN_OHOS)) {
+        return;
+    }
     OHOS_SetNodeVisibility(window->ohosHandle, 1);
 }
 

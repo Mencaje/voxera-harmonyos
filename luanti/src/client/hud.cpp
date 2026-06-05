@@ -23,11 +23,43 @@
 #include "client/minimap.h"
 #include "client/texturesource.h"
 #include "gui/touchcontrols.h"
+#ifdef __OHOS__
+#include "porting_ohos.h"
+#include "ohos_touch_dispatch.h"
+#endif
 #include "util/enriched_string.h"
 #include "irrlicht_changes/CGUITTFont.h"
 #include "gui/drawItemStack.h"
 #include <ICameraSceneNode.h>
 #include <IMesh.h>
+
+#if defined(__OHOS__)
+namespace {
+static constexpr float OHOS_PHONE_HOTBAR_SCALE = 1.10f;
+static constexpr float OHOS_PHONE_HOTBAR_COUNT_FONT_SCALE = 1.30f;
+static constexpr float OHOS_PHONE_HOTBAR_HINT_FONT_SCALE = 1.58f;
+
+void ohosPhoneApplyHotbarSize(s32 &hotbar_imagesize, s32 &padding)
+{
+	if (porting::ohosGetDeviceFormFactor() != "phone")
+		return;
+	hotbar_imagesize = (s32)(hotbar_imagesize * OHOS_PHONE_HOTBAR_SCALE);
+	padding = hotbar_imagesize / 12;
+}
+
+unsigned ohosPhoneHotbarCountFontSize(unsigned base_size)
+{
+	return rangelim((unsigned)(base_size * OHOS_PHONE_HOTBAR_COUNT_FONT_SCALE + 0.5f),
+			12u, 72u);
+}
+
+unsigned ohosPhoneHotbarHintFontSize(unsigned base_size)
+{
+	return rangelim((unsigned)(base_size * OHOS_PHONE_HOTBAR_HINT_FONT_SCALE + 0.5f),
+			12u, 72u);
+}
+}
+#endif
 
 #define OBJECT_CROSSHAIR_LINE_SIZE 8
 #define CROSSHAIR_LINE_SIZE 10
@@ -143,6 +175,9 @@ void Hud::readScalingSetting()
 	m_hotbar_imagesize = std::floor(HOTBAR_IMAGE_SIZE * density + 0.5f);
 	m_hotbar_imagesize *= m_hud_scaling;
 	m_padding = m_hotbar_imagesize / 12;
+#if defined(__OHOS__)
+	ohosPhoneApplyHotbarSize(m_hotbar_imagesize, m_padding);
+#endif
 }
 
 Hud::~Hud()
@@ -226,7 +261,14 @@ void Hud::drawItem(const ItemStack &item, const core::rect<s32>& rect,
 	video::SColor bgcolor2(128, 0, 0, 0);
 	if (!use_hotbar_image)
 		driver->draw2DRectangle(bgcolor2, rect, NULL);
-	drawItemStack(driver, g_fontengine->getFont(), item, rect, NULL,
+	gui::IGUIFont *item_font = g_fontengine->getFont();
+#if defined(__OHOS__)
+	if (porting::ohosGetDeviceFormFactor() == "phone") {
+		item_font = g_fontengine->getFont(
+			ohosPhoneHotbarCountFontSize(g_fontengine->getDefaultFontSize()));
+	}
+#endif
+	drawItemStack(driver, item_font, item, rect, NULL,
 		client, selected ? IT_ROT_SELECTED : IT_ROT_NONE);
 }
 
@@ -303,6 +345,13 @@ void Hud::drawItems(v2s32 screen_pos, v2s32 screen_offset, s32 itemcount, v2f al
 
 		if (is_hotbar && g_touchcontrols)
 			g_touchcontrols->registerHotbarRect(i, item_rect);
+#if defined(__OHOS__)
+		if (is_hotbar && porting::ohosGetDeviceFormFactor() == "phone") {
+			ohos_phone_hotbar_register_rect((unsigned)i,
+					item_rect.UpperLeftCorner.X, item_rect.UpperLeftCorner.Y,
+					item_rect.LowerRightCorner.X, item_rect.LowerRightCorner.Y);
+		}
+#endif
 	}
 }
 
@@ -380,6 +429,10 @@ void Hud::drawLuaElements(const v3s16 &camera_offset)
 				if (e->size.X > 0)
 					font_size *= e->size.X;
 
+#if defined(__OHOS__)
+				if (porting::ohosGetDeviceFormFactor() == "phone")
+					font_size = ohosPhoneHotbarHintFontSize(font_size);
+#endif
 #ifdef __ANDROID__
 				// The text size on Android is not proportional with the actual scaling
 				// FIXME: why do we have such a weird unportable hack??
@@ -564,8 +617,15 @@ void Hud::drawLuaElements(const v3s16 &camera_offset)
 				v2s32 offset((e->align.X - 1.0) * dstsize.X / 2,
 				             (e->align.Y - 1.0) * dstsize.Y / 2);
 				core::rect<s32> rect(0, 0, dstsize.X, dstsize.Y);
-				rect += pos + offset + v2s32(e->offset.X * m_scale_factor,
-				                             e->offset.Y * m_scale_factor);
+				v2s32 draw_offset(e->offset.X * m_scale_factor,
+				                  e->offset.Y * m_scale_factor);
+#if defined(__OHOS__)
+				if (porting::ohosGetDeviceFormFactor() == "phone") {
+					draw_offset.X -= s32(112 * m_scale_factor);
+					draw_offset.Y += s32(28 * m_scale_factor);
+				}
+#endif
+				rect += pos + offset + draw_offset;
 				client->getMinimap()->drawMinimap(rect);
 				break; }
 			case HUD_ELEM_HOTBAR: {
@@ -782,6 +842,10 @@ void Hud::drawStatbar(v2s32 pos, u16 corner, u16 drawdir,
 }
 void Hud::drawHotbar(const v2s32 &pos, const v2f &offset, u16 dir, const v2f &align)
 {
+#if defined(__OHOS__)
+	if (porting::ohosGetDeviceFormFactor() == "phone")
+		ohos_phone_hotbar_reset();
+#endif
 	if (g_touchcontrols)
 		g_touchcontrols->resetHotbarRects();
 
@@ -1036,6 +1100,9 @@ void Hud::resizeHotbar() {
 	m_hotbar_imagesize = floor(HOTBAR_IMAGE_SIZE * density + 0.5);
 	m_hotbar_imagesize *= m_hud_scaling;
 	m_padding = m_hotbar_imagesize / 12;
+#if defined(__OHOS__)
+	ohosPhoneApplyHotbarSize(m_hotbar_imagesize, m_padding);
+#endif
 	if (m_screensize != window_size) {
 		m_screensize = window_size;
 		m_displaycenter = v2s32(m_screensize.X / 2, m_screensize.Y / 2);

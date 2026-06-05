@@ -7,7 +7,34 @@
 #include "drawItemStack.h"
 #include "client/client.h"
 #include "client/renderingengine.h"
+#if defined(__OHOS__)
+#include "porting_ohos.h"
+#endif
 #include <IVideoDriver.h>
+
+#if defined(__OHOS__)
+namespace {
+static void ohosPhoneDrawYellowSlotBorder(video::IVideoDriver *driver,
+		const core::rect<s32> &rect, s32 border, core::rect<s32> *clip)
+{
+	const video::SColor yellow(255, 255, 255, 0);
+	const s32 x1 = rect.UpperLeftCorner.X;
+	const s32 y1 = rect.UpperLeftCorner.Y;
+	const s32 x2 = rect.LowerRightCorner.X;
+	const s32 y2 = rect.LowerRightCorner.Y;
+	driver->draw2DRectangle(yellow,
+			core::rect<s32>(v2s32(x1 - border, y1 - border), v2s32(x2 + border, y1)),
+			clip);
+	driver->draw2DRectangle(yellow,
+			core::rect<s32>(v2s32(x1 - border, y2), v2s32(x2 + border, y2 + border)),
+			clip);
+	driver->draw2DRectangle(yellow,
+			core::rect<s32>(v2s32(x1 - border, y1), v2s32(x1, y2)), clip);
+	driver->draw2DRectangle(yellow,
+			core::rect<s32>(v2s32(x2, y1), v2s32(x2 + border, y2)), clip);
+}
+} // namespace
+#endif
 
 GUIInventoryList::GUIInventoryList(gui::IGUIEnvironment *env,
 	gui::IGUIElement *parent,
@@ -96,6 +123,11 @@ void GUIInventoryList::draw()
 			&& m_invmgr->getInventory(selected_item->inventoryloc) == inv
 			&& selected_item->listname == m_listname
 			&& selected_item->i == item_i;
+#if defined(__OHOS__)
+		const bool phone_tap_select = m_fs_menu->ohosPhoneTapSelectActive();
+#else
+		const bool phone_tap_select = false;
+#endif
 		bool hovering = m_hovered_i == item_i;
 		ItemRotationKind rotation_kind = selected ? IT_ROT_SELECTED :
 			(hovering ? IT_ROT_HOVERED : IT_ROT_NONE);
@@ -132,7 +164,7 @@ void GUIInventoryList::draw()
 		}
 
 		// layer 1
-		if (selected)
+		if (selected && !phone_tap_select)
 			item.takeItem(m_fs_menu->getSelectedAmount());
 
 		if (!item.empty()) {
@@ -140,6 +172,15 @@ void GUIInventoryList::draw()
 			drawItemStack(driver, m_font, item, rect, &AbsoluteClippingRect,
 					client, rotation_kind);
 		}
+
+#if defined(__OHOS__)
+		if (selected && phone_tap_select) {
+			s32 border = m_slot_size.X / 10;
+			if (border < 2)
+				border = 2;
+			ohosPhoneDrawYellowSlotBorder(driver, rect, border, &AbsoluteClippingRect);
+		}
+#endif
 
 		// Add hovering tooltip. The tooltip disappears if any item is selected,
 		// including the currently hovered one.
@@ -159,6 +200,10 @@ void GUIInventoryList::draw()
 			// `!item.empty()` would refer to the part of the selected item
 			// remaining in the source slot.
 			show_tooltip |= hovering && selected && m_fs_menu->getSelectedAmount() != 0;
+#if defined(__OHOS__)
+			// OHOS phone tap-select keeps the stack in-place; show details while selected.
+			show_tooltip |= phone_tap_select && selected && !item.empty();
+#endif
 		}
 
 		if (show_tooltip) {

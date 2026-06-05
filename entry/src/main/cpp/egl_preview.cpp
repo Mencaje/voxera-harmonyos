@@ -46,7 +46,7 @@ bool InitEgl(void *window)
         OH_LOG_ERROR(LOG_APP, "eglChooseConfig failed");
         return false;
     }
-
+    
     const EGLint contextAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
     g_context = eglCreateContext(g_display, config, EGL_NO_CONTEXT, contextAttribs);
     if (g_context == EGL_NO_CONTEXT) {

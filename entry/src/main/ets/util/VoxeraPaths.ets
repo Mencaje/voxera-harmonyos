@@ -1,8 +1,12 @@
 import { Environment, fileIo as fs } from '@kit.CoreFileKit';
-import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
+import { abilityAccessCtrl, bundleManager, common, Permissions } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { taskpool } from '@kit.ArkTS';
+import { window } from '@kit.ArkUI';
 import { userDataCopyTask } from './VoxeraSyncWorker';
+import { OhosPlatformCompat } from './OhosPlatformCompat';
+import { DeviceFormFactor } from './DeviceFormFactor';
+import { WindowDecorHelper } from './WindowDecorHelper';
 
 const DOMAIN = 0x0000;
 const TAG = 'VoxeraPaths';
@@ -29,35 +33,171 @@ const USER_SUBDIRS: string[] = [
  */
 export class VoxeraPaths {
   private static syncInFlight: boolean = false;
+  /** Only one system permission sheet at a time (concurrent calls dismiss each other). */
+  private static documentsPermissionRequest: Promise<boolean> | null = null;
 
   static sandboxUserDir(context: common.UIAbilityContext): string {
     return `${context.filesDir}/luanti_user`;
   }
 
   static publicUserDataDir(): string {
-    const docs = Environment.getUserDocumentDir();
-    return `${docs}/${VOXERA_APP_FOLDER}/${VOXERA_USER_DATA_FOLDER}`;
+    if (!OhosPlatformCompat.supportsPublicDocuments()) {
+      return '';
+    }
+    try {
+      const docs = Environment.getUserDocumentDir();
+      return `${docs}/${VOXERA_APP_FOLDER}/${VOXERA_USER_DATA_FOLDER}`;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'getUserDocumentDir failed: %{public}s', `${e}`);
+      return '';
+    }
   }
 
-  static async ensureDocumentsPermission(context: common.UIAbilityContext): Promise<boolean> {
+  static async checkDocumentsPermission(context: common.UIAbilityContext): Promise<boolean> {
+    if (!OhosPlatformCompat.supportsPublicDocuments()) {
+      return false;
+    }
     const atManager = abilityAccessCtrl.createAtManager();
     try {
       const tokenId = context.applicationInfo.accessTokenId;
       const status = await atManager.checkAccessToken(tokenId, DOC_PERM);
-      if (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
-        return true;
-      }
+      return status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'checkAccessToken failed: %{public}s', `${e}`);
+      return false;
     }
+  }
+
+  static async ensureDocumentsPermission(context: common.UIAbilityContext): Promise<boolean> {
+    if (!OhosPlatformCompat.supportsPublicDocuments()) {
+      return false;
+    }
+    if (await VoxeraPaths.checkDocumentsPermission(context)) {
+      return true;
+    }
+    if (VoxeraPaths.documentsPermissionRequest !== null) {
+      hilog.info(DOMAIN, TAG, 'Documents permission request already in flight — awaiting');
+      return VoxeraPaths.documentsPermissionRequest;
+    }
+    VoxeraPaths.documentsPermissionRequest = VoxeraPaths.requestDocumentsPermissionOnce(context);
     try {
+      return await VoxeraPaths.documentsPermissionRequest;
+    } finally {
+      VoxeraPaths.documentsPermissionRequest = null;
+    }
+  }
+
+  private static delayMs(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Exit immersive fullscreen, then request — system PermissionGrantAbility needs visible UI
+   * and a user gesture; auto-request during startup is dismissed immediately (authResult=2).
+   */
+  static async requestDocumentsPermissionInteractive(context: common.UIAbilityContext): Promise<boolean> {
+    if (!OhosPlatformCompat.supportsPublicDocuments()) {
+      return false;
+    }
+    if (await VoxeraPaths.checkDocumentsPermission(context)) {
+      return true;
+    }
+    let win: window.Window | undefined;
+    try {
+      win = await window.getLastWindow(context);
+      await WindowDecorHelper.applyImmersiveFullscreen(win, false);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'exit immersive before permission: %{public}s', `${e}`);
+    }
+    await VoxeraPaths.delayMs(400);
+    const granted = await VoxeraPaths.ensureDocumentsPermission(context);
+    if (win && DeviceFormFactor.isPhone()) {
+      try {
+        await WindowDecorHelper.applyImmersiveFullscreen(win, true);
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'restore immersive after permission: %{public}s', `${e}`);
+      }
+    }
+    return granted;
+  }
+
+  /** Log bundle + token info before request; helps diagnose authResult=2 (invalid / missing ACL). */
+  static async logDocumentsPermissionDiagnostics(context: common.UIAbilityContext): Promise<void> {
+    try {
+      const info = await bundleManager.getBundleInfoForSelf(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+      hilog.info(DOMAIN, TAG,
+        'Documents perm diagnostics: bundle=%{public}s version=%{public}s tokenId=%{public}d apl=%{public}s',
+        info.name, info.versionName, context.applicationInfo.accessTokenId,
+        context.applicationInfo.appDistributionType ?? 'unknown');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'Documents perm diagnostics failed: %{public}s', `${e}`);
+    }
+    hilog.warn(DOMAIN, TAG,
+      'READ_WRITE_DOCUMENTS_DIRECTORY is system_basic — requires ACL in p7b signing profile ' +
+      '(AGC: restricted ACL permission). authResult=2 means invalid request, not user denial.');
+  }
+
+  /** HarmonyOS: abilityAccessCtrl.requestPermissionsFromUser(UIAbilityContext, …). */
+  private static async requestDocumentsPermissionOnce(
+    context: common.UIAbilityContext,
+  ): Promise<boolean> {
+    const atManager = abilityAccessCtrl.createAtManager();
+    try {
+      hilog.info(DOMAIN, TAG, 'Requesting Documents permission via requestPermissionsFromUser');
       const result = await atManager.requestPermissionsFromUser(context, [DOC_PERM]);
-      return result.authResults.length > 0 &&
-        result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+      const code = result.authResults.length > 0 ? result.authResults[0] : -99;
+      const granted = code === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+      const dialogShown = result.dialogShownResults !== undefined && result.dialogShownResults.length > 0
+        ? result.dialogShownResults[0] : -1;
+      hilog.info(DOMAIN, TAG,
+        'Documents permission result: authResult=%{public}d dialogShown=%{public}d granted=%{public}s perms=%{public}s',
+        code, dialogShown, granted ? 'yes' : 'no', JSON.stringify(result.permissions));
+      if (code === 2) {
+        await VoxeraPaths.logDocumentsPermissionDiagnostics(context);
+        hilog.error(DOMAIN, TAG,
+          'System permission sheet dismissed immediately (authResult=2). ' +
+          'Re-sign with p7b profile that includes ohos.permission.READ_WRITE_DOCUMENTS_DIRECTORY ACL.');
+      }
+      return granted;
     } catch (e) {
       hilog.warn(DOMAIN, TAG, 'requestPermissionsFromUser failed: %{public}s', `${e}`);
       return false;
     }
+  }
+
+  /**
+   * After Documents permission: create Documents/Voxera/user_data tree (worlds, games, mods, …)
+   * and mirror sandbox engine data — same folders Luanti creates via core.create_dir.
+   */
+  static async activatePublicUserDataMirror(
+    context: common.UIAbilityContext,
+    engineDir: string,
+    requestPermission: boolean = true,
+  ): Promise<string> {
+    if (!OhosPlatformCompat.supportsPublicDocuments() || engineDir.length === 0) {
+      return '';
+    }
+    VoxeraPaths.ensureUserDataTree(engineDir);
+    const docsOk = requestPermission
+      ? await VoxeraPaths.ensureDocumentsPermission(context)
+      : await VoxeraPaths.checkDocumentsPermission(context);
+    if (!docsOk) {
+      return '';
+    }
+    const publicDir = VoxeraPaths.publicUserDataDir();
+    if (publicDir.length === 0) {
+      return '';
+    }
+    VoxeraPaths.ensureUserDataTree(publicDir);
+    VoxeraPaths.migratePublicToEngine(context, publicDir);
+    if (VoxeraPaths.needsSandboxMigrate(publicDir)) {
+      VoxeraPaths.scheduleMigrateSandboxUserData(context, publicDir);
+    } else {
+      VoxeraPaths.scheduleSyncEngineToPublic(engineDir, publicDir);
+    }
+    hilog.info(DOMAIN, TAG, 'Public user_data ready: %{public}s', publicDir);
+    return publicDir;
   }
 
   static resolveUserDataDir(context: common.UIAbilityContext, documentsGranted: boolean): string {

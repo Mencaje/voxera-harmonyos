@@ -11,6 +11,11 @@
 #include "gui/guiInventoryList.h"
 #include "porting.h"
 #include "settings.h"
+#include "log.h"
+#include "util/string.h"
+#if defined(__OHOS__)
+#include "porting_ohos.h"
+#endif
 
 PointerAction PointerAction::fromEvent(const SEvent &event) {
 	switch (event.EventType) {
@@ -19,7 +24,13 @@ PointerAction PointerAction::fromEvent(const SEvent &event) {
 	case EET_TOUCH_INPUT_EVENT:
 		return {v2s32(event.TouchInput.X, event.TouchInput.Y), porting::getTimeMs()};
 	default:
+#ifdef __OHOS__
+		warningstream << "PointerAction::fromEvent ignored EventType "
+				<< (int)event.EventType << std::endl;
+		return {v2s32(), porting::getTimeMs()};
+#else
 		FATAL_ERROR("SEvent given to PointerAction::fromEvent has wrong EventType");
+#endif
 	}
 }
 
@@ -291,6 +302,38 @@ bool GUIModalMenu::preprocessEvent(const SEvent &event)
 	}
 #endif
 
+#if defined(__OHOS__)
+	if (porting::ohosGetDeviceFormFactor() == "phone" &&
+			event.EventType == EET_MOUSE_INPUT_EVENT &&
+			(event.MouseInput.Event == EMIE_LMOUSE_PRESSED_DOWN ||
+			event.MouseInput.Event == EMIE_LMOUSE_DOUBLE_CLICK)) {
+		gui::IGUIElement *hovered =
+			Environment->getRootGUIElement()->getElementFromPoint(
+				core::position2d<s32>(event.MouseInput.X, event.MouseInput.Y));
+		if ((hovered) && (hovered->getType() == gui::EGUIET_EDIT_BOX)) {
+			bool retval = hovered->OnEvent(event);
+			if (retval)
+				Environment->setFocus(hovered);
+
+			std::string field_name = getNameByID(hovered->getID());
+			if (field_name.empty())
+				return retval;
+
+			m_jni_field_name = field_name;
+
+			int type = 2;
+			if (((gui::IGUIEditBox *)hovered)->isMultiLineEnabled())
+				type = 1;
+			if (((gui::IGUIEditBox *)hovered)->isPasswordBox())
+				type = 3;
+
+			porting::ohosShowTextInputDialog("",
+					wide_to_utf8(((gui::IGUIEditBox *) hovered)->getText()), type);
+			return true;
+		}
+	}
+#endif
+
 	// If the second touch arrives here again, that means nobody handled it.
 	// Abort to avoid infinite recursion.
 	if (m_second_touch)
@@ -365,6 +408,16 @@ porting::AndroidDialogState GUIModalMenu::getAndroidUIInputState()
 		return porting::DIALOG_CANCELED;
 
 	return porting::getInputDialogState();
+}
+#endif
+
+#if defined(__OHOS__)
+porting::OhosDialogState GUIModalMenu::getOhosUIInputState()
+{
+	if (m_jni_field_name.empty())
+		return porting::OHOS_DIALOG_CANCELED;
+
+	return porting::ohosGetInputDialogState();
 }
 #endif
 

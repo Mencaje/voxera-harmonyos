@@ -8,9 +8,12 @@
     },
     "externalNativeOptions": {
       "path": "./src/main/cpp/CMakeLists.txt",
-      "arguments": "-DVOXERA_BUILD_LUANTI=ON -DOHOS_ARCH=x86_64",
+      "arguments": "-DVOXERA_BUILD_LUANTI=ON",
       "cppFlags": "",
-      "abiFilters": ["x86_64"]
+      "abiFilters": [
+        "arm64-v8a",
+        "x86_64"
+      ]
     }
   },
   "buildOptionSet": [

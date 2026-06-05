@@ -165,6 +165,13 @@ ScriptApiBase::ScriptApiBase(ScriptingType type):
 	lua_pushstring(m_luastack, porting::getPlatformName());
 	lua_setglobal(m_luastack, "PLATFORM");
 
+#if defined(__OHOS__)
+	lua_pushstring(m_luastack, porting::ohosGetDeviceFormFactor().c_str());
+#else
+	lua_pushstring(m_luastack, "");
+#endif
+	lua_setglobal(m_luastack, "DEVICE_FORM_FACTOR");
+
 	// Make sure Lua uses the right locale
 	setlocale(LC_NUMERIC, "C");
 }

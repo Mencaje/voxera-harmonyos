@@ -3,13 +3,14 @@ import { common, Want } from '@kit.AbilityKit';
 import { fileUri, picker } from '@kit.CoreFileKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { zlib } from '@kit.BasicServicesKit';
-import { BusinessError } from '@kit.BasicServicesKit';
-import { window } from '@kit.ArkUI';
-import { uniformTypeDescriptor } from '@kit.ArkData';
-import { completeOhosCopyDir, completeOhosFilePick, pollOhosUiRequest } from '../native/LuantiNative';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
+import { promptAction, window } from '@kit.ArkUI';
+import { completeOhosCopyDir, completeOhosFilePick, pollOhosUiRequest, setPublicUserDataDir } from '../native/LuantiNative';
 import { VoxeraPaths } from './VoxeraPaths';
 import pointer from '@ohos.multimodalInput.pointer';
+import { vibrator } from '@kit.SensorServiceKit';
 import { WindowDecorHelper } from './WindowDecorHelper';
+import { FormspecTextInputRequest } from '../components/PhoneFormspecTextInput';
 
 const DOMAIN = 0x0000;
 const TAG = 'OhosUiBridge';
@@ -20,6 +21,11 @@ export class OhosUiBridge {
   private static uiContext: common.UIAbilityContext | undefined = undefined;
   private static engineUserDir: string = '';
   private static publicUserDir: string = '';
+  private static textInputOpen: ((req: FormspecTextInputRequest) => void) | undefined = undefined;
+
+  static bindFormspecTextInput(open: (req: FormspecTextInputRequest) => void): void {
+    OhosUiBridge.textInputOpen = open;
+  }
 
   static setUserDataDirs(engineDir: string, publicDir: string): void {
     OhosUiBridge.engineUserDir = engineDir;
@@ -53,6 +59,9 @@ export class OhosUiBridge {
     }
 
     if (req.kind === 3) {
+      if (deviceInfo.deviceType !== '2in1') {
+        return;
+      }
       const capture = req.payload === '1';
       try {
         pointer.setPointerVisibleSync(!capture);
@@ -65,6 +74,26 @@ export class OhosUiBridge {
 
     if (req.kind === 4) {
       await OhosUiBridge.applyFullscreen(context, req.payload === '1');
+      return;
+    }
+
+    if (req.kind === 7) {
+      const ms = parseInt(req.payload, 10);
+      if (ms > 0) {
+        try {
+          vibrator.startVibration({ type: 'time', duration: ms }, { id: 0, usage: 'touch' });
+        } catch (e) {
+          hilog.warn(DOMAIN, TAG, 'vibrate failed: %{public}s', `${e}`);
+        }
+      }
+      return;
+    }
+
+    if (req.kind === 8 && req.payload.length > 0 && OhosUiBridge.textInputOpen) {
+      const parsed = OhosUiBridge.parseTextInputPayload(req.payload);
+      if (parsed) {
+        OhosUiBridge.textInputOpen(parsed);
+      }
       return;
     }
 
@@ -155,6 +184,66 @@ export class OhosUiBridge {
     }
   }
 
+  /** Phone native install UI: pick .zip, extract to cache, return extract dir for Lua install. */
+  static async pickGamePackage(context: common.UIAbilityContext, cacheDir: string): Promise<string> {
+    return OhosUiBridge.pickZipToCache(context, cacheDir);
+  }
+
+  /** ContentDB download page (same URL as Lua local_install.get_download_url). */
+  static async openContentDbDownload(context: common.UIAbilityContext): Promise<void> {
+    await OhosUiBridge.openInSystemBrowser(context, 'https://content.luanti.org/');
+  }
+
+  static async openBrowserUrl(context: common.UIAbilityContext, url: string): Promise<void> {
+    await OhosUiBridge.openInSystemBrowser(context, url);
+  }
+
+  /** Same path as Lua core.open_dir(core.get_user_path()) on HarmonyOS. */
+  static async openUserDataDirectory(context: common.UIAbilityContext): Promise<void> {
+    let engineDir = OhosUiBridge.engineUserDir;
+    if (engineDir.length === 0) {
+      engineDir = VoxeraPaths.sandboxUserDir(context);
+    }
+    const granted = await VoxeraPaths.requestDocumentsPermissionInteractive(context);
+    if (!granted) {
+      promptAction.showToast({
+        message: '需要允许访问「文件」目录，才能在文件管理器中打开用户数据。请点击「去授权」并授予权限。',
+        duration: 4000,
+      });
+      hilog.warn(DOMAIN, TAG, 'openUserDataDirectory: Documents permission unavailable, sandbox not openable');
+      return;
+    }
+    const publicDir = await VoxeraPaths.activatePublicUserDataMirror(context, engineDir, false);
+    if (publicDir.length > 0) {
+      OhosUiBridge.engineUserDir = engineDir;
+      OhosUiBridge.publicUserDir = publicDir;
+      setPublicUserDataDir(publicDir);
+      await OhosUiBridge.openLocalFolder(context, publicDir);
+      return;
+    }
+
+    promptAction.showToast({
+      message: '无法创建 Documents/Voxera/user_data，请稍后重试。',
+      duration: 4000,
+    });
+    hilog.warn(DOMAIN, TAG, 'openUserDataDirectory: public mirror setup failed');
+  }
+
+  private static parseTextInputPayload(payload: string): FormspecTextInputRequest | undefined {
+    const nl1 = payload.indexOf('\n');
+    if (nl1 < 0) {
+      return undefined;
+    }
+    const nl2 = payload.indexOf('\n', nl1 + 1);
+    if (nl2 < 0) {
+      return undefined;
+    }
+    const editType = parseInt(payload.substring(0, nl1), 10);
+    const hint = payload.substring(nl1 + 1, nl2);
+    const current = payload.substring(nl2 + 1);
+    return { editType, hint, current };
+  }
+
   private static async openInSystemBrowser(context: common.UIAbilityContext, url: string): Promise<void> {
     const want: Want = {
       action: 'ohos.want.action.viewData',
@@ -187,58 +276,6 @@ export class OhosUiBridge {
     await OhosUiBridge.extractZipToDir(zipPath, extractDir);
     hilog.info(DOMAIN, TAG, 'zip extracted -> %{public}s', extractDir);
     return extractDir;
-  }
-
-  static extractFileUriFromDrop(event: DragEvent): string {
-    const data = event.getData();
-    if (!data) {
-      return '';
-    }
-    const records = data.getRecords();
-    for (let i = 0; i < records.length; i++) {
-      const rec = records[i];
-      if (rec.getType() !== uniformTypeDescriptor.UniformDataType.FILE_URI) {
-        continue;
-      }
-      const entry = rec.getEntry(uniformTypeDescriptor.UniformDataType.FILE_URI) as Record<string, Object>;
-      const oriUri = entry['oriUri'] as string | undefined;
-      if (oriUri && oriUri.length > 0) {
-        return oriUri;
-      }
-      const fileUri = entry['fileUri'] as string | undefined;
-      if (fileUri && fileUri.length > 0) {
-        return fileUri;
-      }
-    }
-    return '';
-  }
-
-  static handleZipDrop(context: common.UIAbilityContext, cacheDir: string,
-    formname: string, event: DragEvent): void {
-    const uri = OhosUiBridge.extractFileUriFromDrop(event);
-    if (uri.length === 0) {
-      hilog.warn(DOMAIN, TAG, 'drop: no FILE_URI in drag data');
-      return;
-    }
-    if (OhosUiBridge.picking) {
-      return;
-    }
-    OhosUiBridge.picking = true;
-    OhosUiBridge.uriZipToExtractDir(uri, cacheDir).then((path: string) => {
-      hilog.info(DOMAIN, TAG, 'drop install ok: %{public}s', path);
-      completeOhosFilePick(formname, path);
-      // DragResult.DRAG_SUCCESSFUL = 0; enum not exported from @kit.ArkUI in this SDK.
-      try {
-        event.setResult(0);
-      } catch {
-        // optional on some API levels
-      }
-    }).catch((e: Error) => {
-      hilog.warn(DOMAIN, TAG, 'drop install failed: %{public}s', `${e}`);
-      completeOhosFilePick(formname, '');
-    }).finally(() => {
-      OhosUiBridge.picking = false;
-    });
   }
 
   private static async extractZipToDir(zipPath: string, destDir: string): Promise<void> {

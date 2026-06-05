@@ -1,8 +1,16 @@
 # 版权与许可说明 / Copyright and License Notice
 
-## Voxera for HarmonyOS
+## Voxera for HarmonyOS 2.0
 
-本仓库 **Voxera 鸿蒙版** 是在开源项目 [Luanti](https://www.luanti.org/)（<https://github.com/luanti-org/luanti>）源码基础上移植、修改而成的衍生作品，**仅面向 HarmonyOS PC（2in1）**，以键鼠操作为主，不支持鸿蒙手机/平板及触屏玩法。
+本仓库 **Voxera 鸿蒙版** 是在开源项目 [Luanti](https://www.luanti.org/)（<https://github.com/luanti-org/luanti>）源码基础上移植、修改而成的衍生作品。
+
+**2.0 支持平台：**
+
+| 平台 | 设备类型 | 主要交互 |
+|------|----------|----------|
+| **手机** | HarmonyOS `default` | 自研 ArkUI 界面 + 触屏 + 虚拟控件 |
+| **平板** | HarmonyOS `tablet` | 键盘/鼠标 + 触屏 overlay + Luanti Lua UI |
+| **PC（2in1）** | HarmonyOS / OpenHarmony `2in1` | 键盘/鼠标 + Luanti Lua UI |
 
 **Voxera** 鸿蒙移植及相关修改：
 
@@ -19,7 +27,7 @@
 
 ## LGPL 用户权利（摘要）
 
-若你获得本程序的**二进制**发行版，有权按照 LGPL-2.1 要求获取与之对应的**完整可编译源码**（含对本仓库及 Luanti 的修改）。本仓库即为公开源码之一；亦可从上述 GitHub 地址克隆。
+若你获得本程序的**二进制**发行版，有权按照 LGPL-2.1 要求获取与之对应的**完整可编译源码**（含对本仓库及 Luanti 的修改）。本仓库即为公开源码之一；亦可从 <https://github.com/Mencaje/voxera-harmonyos> 克隆。
 
 ## 其他组件
 

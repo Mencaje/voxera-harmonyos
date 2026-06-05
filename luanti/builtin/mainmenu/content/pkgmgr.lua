@@ -118,6 +118,10 @@ end
 
 --------------------------------------------------------------------------------
 function pkgmgr.reload_texture_packs()
+	if not core.get_texturepath then
+		pkgmgr.texture_packs = pkgmgr.texture_packs or {}
+		return
+	end
 	local txtpath = core.get_texturepath()
 	local txtpath_system = core.get_texturepath_share()
 	local retval = {}
@@ -602,7 +606,15 @@ function pkgmgr.install_dir(expected_type, path, basename, targetpath)
 
 	-- Copy it
 	core.delete_dir(targetpath)
-	if not core.copy_dir(basefolder.path, targetpath, false) then
+	local installed = core.copy_dir(basefolder.path, targetpath, false)
+	if not installed then
+		-- Move can fail when rename is blocked or delete left a non-empty dir (common on OHOS).
+		installed = core.copy_dir(basefolder.path, targetpath, true)
+		if installed then
+			core.delete_dir(basefolder.path)
+		end
+	end
+	if not installed then
 		return nil,
 			fgettext_ne("Failed to install $1 to $2", basename, targetpath)
 	end
@@ -750,6 +762,9 @@ end
 
 --------------------------------------------------------------------------------
 function pkgmgr.reload_global_mods()
+	if not core.get_modpaths then
+		return
+	end
 	local function is_equal(element,uid) --uid match
 		if element.name == uid then
 			return true
@@ -799,11 +814,21 @@ end
 
 --------------------------------------------------------------------------------
 function pkgmgr.reload_games()
+	if not core.get_games then
+		pkgmgr.games = pkgmgr.games or {}
+		return
+	end
 	pkgmgr.games = core.get_games()
 	table.sort(pkgmgr.games, function(a, b)
 		return a.title:lower() < b.title:lower()
 	end)
 	pkgmgr.update_translations(pkgmgr.games)
+end
+
+function pkgmgr.trigger_reload_games()
+	if core.get_games then
+		pkgmgr.reload_games()
+	end
 end
 
 --------------------------------------------------------------------------------
@@ -834,6 +859,12 @@ end
 
 --------------------------------------------------------------------------------
 function pkgmgr.update_translations(list)
+	if not core.get_content_translation then
+		for _, item in ipairs(list) do
+			item.is_translated = true
+		end
+		return
+	end
 	for _, item in ipairs(list) do
 		local info = core.get_content_info(item.path)
 		assert(info.path)
@@ -885,7 +916,3 @@ function pkgmgr.normalize_game_id(name)
 end
 
 
---------------------------------------------------------------------------------
--- read initial data
---------------------------------------------------------------------------------
-pkgmgr.reload_games()
